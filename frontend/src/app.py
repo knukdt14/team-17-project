@@ -3,7 +3,7 @@ app.py
 - frontend 컨테이너의 Streamlit 진입점.
 - 로그인 상태(auth.py)에 따라 챗봇/관리자 메뉴를 구성하고, 각 화면은
   chat_page.py / admin_page.py에 위임한다.
-- RAG 로직/모델 관련 코드는 전혀 갖지 않는다. backend 게이트웨이(/ask, /upload)만 호출.
+- RAG 로직/모델 관련 코드는 전혀 갖지 않는다. model 서비스(/ask, /ingest)만 직접 호출.
 """
 
 import streamlit as st

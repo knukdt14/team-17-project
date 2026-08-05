@@ -1,8 +1,8 @@
 """
 sources.py
 - RAG 답변의 근거가 된 출처(조항)를 클릭해서 펼쳐보는 카드 UI.
-- backend/model이 아직 sources 필드를 안 내려줘도 에러 없이 조용히 아무것도 표시하지 않는다.
-- backend가 sources: [{"filename": ..., "page": ..., "text": ...}] 형태로 내려주기 시작하면
+- model이 아직 sources 필드를 안 내려줘도 에러 없이 조용히 아무것도 표시하지 않는다.
+- model이 sources: [{"filename": ..., "page": ..., "text": ...}] 형태로 내려주기 시작하면
   이 모듈은 수정 없이 바로 동작한다.
 """
 
@@ -23,7 +23,7 @@ def extract_article_label(text: str):
 
 
 def render_sources(sources):
-    """출처 카드 UI. backend/model이 sources 필드를 내려주면 클릭해서 펼치는 카드로 보여준다.
+    """출처 카드 UI. model이 sources 필드를 내려주면 클릭해서 펼치는 카드로 보여준다.
     카드 제목은 "제O조(제목)"을 우선 쓰고(본문에서 자동 추출), 없으면 "파일명 · N페이지"로 대체한다.
     펼치면 해당 조항 원문이 그대로 나와서, 클릭 한 번으로 근거 조항을 바로 확인할 수 있다.
     """

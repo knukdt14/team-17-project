@@ -7,7 +7,7 @@ admin_page.py
 
 import streamlit as st
 
-from api_client import BackendError, upload_pdf
+from api_client import ModelServiceError, upload_pdf
 
 
 def render():
@@ -20,12 +20,12 @@ def render():
             try:
                 data = upload_pdf(uploaded.name, uploaded.getvalue())
                 st.success(f"{data['filename']} 반영 완료 (청크 {data['chunks_added']}개 추가)")
-            except BackendError as e:
+            except ModelServiceError as e:
                 st.error(str(e))
 
     st.divider()
     st.subheader("업로드된 문서 목록")
     st.info(
-        "📋 문서 목록 조회/삭제 기능은 아직 backend에 관련 API(`/documents` 등)가 없어서 "
-        "준비 중입니다. backend가 추가되면 여기에 목록·삭제 UI를 연결하겠습니다."
+        "📋 문서 목록 조회/삭제 기능은 아직 model에 관련 API(`/documents` 등)가 없어서 "
+        "준비 중입니다. 추가되면 여기에 목록·삭제 UI를 연결하겠습니다."
     )

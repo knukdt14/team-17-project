@@ -2,14 +2,10 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# PyMuPDF(OCR 폴백)에 필요한 tesseract 엔진 (한국어 포함) +
-# triton(torch가 리눅스에서만 끌어오는 의존성)이 일부 커널을 JIT 컴파일할 때 필요한 C 컴파일러.
-# 이게 없으면 로컬 LLM 스트리밍 생성 스레드가 "Failed to find C compiler"로 조용히 죽고,
-# 메인 스레드는 TextIteratorStreamer 60초 타임아웃까지 아무 응답 없이 멈춰있게 됨.
+# PyMuPDF(OCR 폴백)에 필요한 tesseract 엔진 (한국어 포함)
 RUN apt-get update && apt-get install -y --no-install-recommends \
         tesseract-ocr \
         tesseract-ocr-kor \
-        build-essential \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
@@ -19,7 +15,13 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir \
         --index-url https://download.pytorch.org/whl/cu130 \
         --extra-index-url https://pypi.org/simple \
-        -r requirements.txt
+        -r requirements.txt \
+    # torch가 리눅스에서는 triton을 같이 까는데(윈도우는 휠이 없어서 애초에 안 깔림), 이 환경에서
+    # 4bit 추론 중 triton 커널 경로를 타면서 매 호출마다 gcc로 커널을 JIT 재컴파일해 응답이
+    # 수십 분씩 걸리는 문제를 실측으로 확인함(단순히 컴파일러가 없어 죽는 것보다 훨씬 치명적).
+    # build-essential을 넣어 컴파일러를 쥐어주는 대신, triton 자체를 제거해서 네이티브(Windows)에서
+    # 이미 검증된 "triton 없는" fallback 경로를 강제로 타게 함.
+    && pip uninstall -y triton
 
 COPY src/ ./src/
 RUN mkdir -p /app/data/raw /app/vectorstore /app/uploads

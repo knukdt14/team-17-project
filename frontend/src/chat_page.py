@@ -1,16 +1,16 @@
 """
 chat_page.py
-- 사용자용 챗봇 화면. backend와의 통신은 api_client를 통해서만 한다.
+- 사용자용 챗봇 화면. model과의 통신은 api_client를 통해서만 한다.
 """
 
 import streamlit as st
 
-from api_client import BackendError, ask, send_feedback
+from api_client import ModelServiceError, ask_stream, send_feedback
 from sources import render_sources
 
 
 def _render_feedback(idx: int, message: dict):
-    """답변 아래 👍/👎 버튼. 누르면 backend로 피드백을 보낸다 (backend에 엔드포인트가
+    """답변 아래 👍/👎 버튼. 누르면 model로 피드백을 보낸다 (model에 엔드포인트가
     아직 없어도 조용히 무시되므로 안전). 같은 평가를 매 rerun마다 중복 전송하지 않도록
     message에 마지막으로 보낸 값을 기록해둔다.
     """
@@ -61,10 +61,8 @@ def render():
 
             with st.spinner(spinner_text):
                 try:
-                    data = ask(question)
-                    answer = data.get("answer", "")
-                    sources = data.get("sources")
-                except BackendError as e:
+                    answer = st.write_stream(ask_stream(question))
+                except ModelServiceError as e:
                     answer = str(e)
                     is_error = True
 
@@ -73,7 +71,6 @@ def render():
             if is_error:
                 st.error(answer)
             else:
-                st.markdown(answer)
                 render_sources(sources)
 
         st.session_state.messages.append(
