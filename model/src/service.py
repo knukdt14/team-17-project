@@ -125,6 +125,9 @@ def _word_overlap(a: str, b: str) -> float:
 
 
 _ARTICLE_HEADER_RE = re.compile(r"제\s*\d+\s*조(?:의\s*\d+)?\s*\([^)]{0,40}\)")
+# "1. ", "5. ", "①", "④" 처럼 상위 항목을 나타내는 줄 - 매칭 라인이 이런 항목 아래 딸려있을 때
+# 그 상위 항목 제목을 같이 보여줘야 "어디 소속 내용인지" 문맥이 살아남
+_HEADING_LINE_RE = re.compile(r"^\s*(?:[①-⑮]|\d{1,2}\s*[.)]\s*\S)")
 
 
 def _best_snippet(answer: str, text: str) -> str:
@@ -147,9 +150,19 @@ def _best_snippet(answer: str, text: str) -> str:
     if not lines:
         return text
     best_idx = max(range(len(lines)), key=lambda i: _word_overlap(answer, lines[i]))
-    start = max(0, best_idx - 1)
-    end = min(len(lines), best_idx + 2)
-    return "\n".join(lines[start:end])
+    start = max(0, best_idx - 2)
+    end = min(len(lines), best_idx + 3)
+
+    # 윈도우 밖(위쪽)에 상위 항목 제목이 있으면 문맥으로 같이 붙인다 (예: 매칭 라인이
+    # "●인정 일수: ..."인데 몇 줄 위의 "5. 질병ㆍ입원"이 그 상위 항목인 경우).
+    heading_idx = None
+    for i in range(start - 1, max(-1, start - 6), -1):
+        if _HEADING_LINE_RE.match(lines[i]):
+            heading_idx = i
+            break
+
+    snippet_lines = ([lines[heading_idx]] if heading_idx is not None else []) + lines[start:end]
+    return "\n".join(snippet_lines)
 
 
 def _stream_answer(question: str):
