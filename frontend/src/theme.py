@@ -51,7 +51,10 @@ def apply_global_style():
 
 
 def _clear_cohort():
+    # 기수를 바꾸면 이전 기수에서 나눴던 대화가 새 기수 화면에 그대로 남아있으면 안 되니
+    # 같이 비운다.
     app.storage.user["selected_cohort"] = None
+    app.storage.user["chat_messages"] = []
 
 
 def _brand_mark():

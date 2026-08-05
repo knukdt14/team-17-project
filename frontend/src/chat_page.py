@@ -45,12 +45,16 @@ def chat_page():
             with ui.chat_message(
                 name=LABELS.get(message["role"], ""), sent=(message["role"] == "user")
             ).classes("w-full"):
-                if message.get("is_error"):
-                    ui.label(message["content"]).classes("text-red-500")
-                else:
-                    ui.markdown(message["content"])
-                    if message["role"] == "assistant":
-                        render_sources(message.get("sources"))
+                # q-chat-message는 default slot 안의 자식이 여러 개면 각각을 별도 말풍선으로
+                # 그린다. 답변+출처를 한 말풍선 안에 이어 붙이려면 자식을 하나(이 column)로
+                # 묶어야 한다.
+                with ui.column().classes("gap-0.5 w-full"):
+                    if message.get("is_error"):
+                        ui.label(message["content"]).classes("text-red-500")
+                    else:
+                        ui.markdown(message["content"])
+                        if message["role"] == "assistant":
+                            render_sources(message.get("sources"))
 
     for m in messages:
         _render_history_message(m)
@@ -65,9 +69,10 @@ def chat_page():
 
         answer = {"text": ""}
         with chat_box:
-            with ui.chat_message(name=LABELS["assistant"]).classes("w-full") as msg:
-                content_md = ui.markdown("")
-                spinner = ui.spinner("dots", size="2em", color="primary")
+            with ui.chat_message(name=LABELS["assistant"]).classes("w-full"):
+                with ui.column().classes("gap-0.5 w-full") as body:
+                    content_md = ui.markdown("")
+                    spinner = ui.spinner("dots", size="2em", color="primary")
 
         def on_token(token: str):
             answer["text"] += token
@@ -95,7 +100,7 @@ def chat_page():
         )
 
         if not is_error:
-            with msg:
+            with body:
                 render_sources(sources)
 
     async def _submit():

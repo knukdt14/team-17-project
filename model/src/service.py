@@ -42,7 +42,11 @@ EMBEDDING_MODEL_KEY = "bge_m3"
 # 스트리밍(TextIteratorStreamer 60초 타임아웃)이 실패하는 걸 확인함. 질문 1건 임베딩은 CPU로도
 # 충분히 빠르므로 CPU로 분리해서 GPU를 전부 LLM에 준다.
 EMBEDDING_DEVICE = "cpu"
-LLM_KEY = "hf_local"
+# 로컬 Qwen2.5-7B(4bit)이 가끔 한자/중국어가 섞여 나오는 언어 드리프트가 있어서, API 기반
+# Upstage Solar로 교체함. get_answer_chain이 prompt|llm|StrOutputParser()로 백엔드를
+# 추상화해두고 있어서(rag_chain.get_llm) llm_key만 바꾸면 되고, 나머지 스트리밍/검색 로직은
+# 그대로 재사용된다. UPSTAGE_API_KEY가 .env에 있어야 한다.
+LLM_KEY = "solar"
 PROMPT_STYLE = "service"
 USE_HYBRID_RETRIEVAL = True
 TOP_K = 5
