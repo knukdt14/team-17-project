@@ -41,8 +41,10 @@ EMBEDDING_MODELS: Dict[str, dict] = {
 DEFAULT_MODEL_KEY = "jhgan"
 
 
-def get_embedding_model(model_key: str = DEFAULT_MODEL_KEY) -> HuggingFaceEmbeddings:
-    """LangChain 호환 임베딩 객체 반환. Chroma.from_documents / FAISS.from_documents에 그대로 넣으면 됨."""
+def get_embedding_model(model_key: str = DEFAULT_MODEL_KEY, device: str | None = None) -> HuggingFaceEmbeddings:
+    """LangChain 호환 임베딩 객체 반환. Chroma.from_documents / FAISS.from_documents에 그대로 넣으면 됨.
+    device를 안 넘기면 torch가 CUDA 사용 가능 시 자동으로 GPU에 올림 - LLM과 같은 GPU에서
+    VRAM을 다투게 되므로, LLM과 동시에 서빙하는 쪽(service.py)에서는 device="cpu"로 분리해서 쓴다."""
     if model_key not in EMBEDDING_MODELS:
         raise ValueError(
             f"등록되지 않은 모델 key: {model_key} (가능한 값: {list(EMBEDDING_MODELS)})"
@@ -50,6 +52,7 @@ def get_embedding_model(model_key: str = DEFAULT_MODEL_KEY) -> HuggingFaceEmbedd
     model_id = EMBEDDING_MODELS[model_key]["model_id"]
     return HuggingFaceEmbeddings(
         model_name=model_id,
+        model_kwargs={"device": device} if device else {},
         encode_kwargs={"normalize_embeddings": True},  # 정규화 -> 코사인 유사도 = 내적으로 계산
     )
 

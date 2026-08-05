@@ -5,6 +5,7 @@ rag_chain.py
 """
 
 import os
+import re
 
 import torch
 from dotenv import load_dotenv
@@ -15,7 +16,7 @@ from langchain_huggingface import ChatHuggingFace, HuggingFaceEndpoint, HuggingF
 from langchain_upstage import ChatUpstage
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_groq import ChatGroq
-from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig, LogitsProcessor, LogitsProcessorList
 from transformers import pipeline as hf_pipeline
 
 # .env 파일 로드
@@ -83,6 +84,36 @@ GROQ_MODELS = {
 # 여러 번(서버 시작 + /ingest 재구성) 호출돼도 모델을 한 번만 로드하도록 캐싱함.
 _local_chat_model_cache: dict[str, ChatHuggingFace] = {}
 
+_HAN_CHAR_RE = re.compile(r"[一-鿿]")
+
+
+class _StopOnChineseDrift(LogitsProcessor):
+    """최근 생성된 구간에 한자(중국어)가 나타나면 강제로 EOS를 내보내 생성을 중단한다.
+    4bit 양자화된 소형 다국어 모델이 답변 후반부에 중국어로 새는 기존 이슈(repetition_penalty만으로는
+    완전히 안 막힘)를 문장 단위가 아니라 생성 자체를 끊어서 완화하기 위함.
+
+    한자/가나 토큰 자체를 어휘에서 통째로 금지하는 방식(_BanNonKoreanTokens, 제거됨)도 시도했으나
+    Qwen 어휘의 18%(약 27000개)가 한자 포함이라 그만큼을 막으면 나머지 토큰들의 확률 분포까지
+    같이 틀어져서 정상적인 한국어 단어/숫자 표기까지 오타가 나는 부작용이 실측으로 확인됨.
+    그래서 "새는 걸 감지해서 즉시 끊는" 이 방식으로 되돌림 - 중국어가 완전히 0글자는 아니지만
+    (감지 전 1~2글자는 새어나올 수 있음) 나머지 답변의 품질은 그대로 유지된다."""
+
+    WINDOW_CHARS = 10
+    HAN_THRESHOLD = 1
+
+    def __init__(self, tokenizer, eos_token_id: int):
+        self.tokenizer = tokenizer
+        self.eos_token_id = eos_token_id
+
+    def __call__(self, input_ids, scores):
+        tail_ids = input_ids[0, -40:]
+        tail_text = self.tokenizer.decode(tail_ids, skip_special_tokens=True)[-self.WINDOW_CHARS :]
+        if len(_HAN_CHAR_RE.findall(tail_text)) >= self.HAN_THRESHOLD:
+            forced = torch.full_like(scores, float("-inf"))
+            forced[:, self.eos_token_id] = 0.0
+            return forced
+        return scores
+
 
 def _get_local_hf_chat_model() -> ChatHuggingFace:
     model_id = os.environ.get("LOCAL_LLM_MODEL", "Qwen/Qwen2.5-7B-Instruct")
@@ -110,11 +141,16 @@ def _get_local_hf_chat_model() -> ChatHuggingFace:
         tokenizer=tokenizer,
         max_new_tokens=512,
         do_sample=False,
-        # 4bit 양자화된 소형 다국어 모델은 답변 후반부에 반복이 생기며 중국어/일본어로
-        # 새는 경우가 있음. repetition_penalty + no_repeat_ngram_size로 반복을 억제해 완화.
-        repetition_penalty=1.15,
-        no_repeat_ngram_size=4,
+        # 4bit 양자화된 소형 다국어 모델은 답변 후반부에 반복이 생기며 중국어/일본어로 새는 경우가
+        # 있어 repetition_penalty로 완화하고, 그래도 새는 경우는 _StopOnChineseDrift가 생성 자체를
+        # 끊는다. no_repeat_ngram_size는 뺐음 - "1,000,000원"처럼 숫자에 같은 자리(0 등)가 반복되는
+        # 정상적인 경우까지 하드하게 금지시켜서 숫자가 깨지는 부작용이 실측으로 확인됨. repetition_penalty도
+        # 1.15는 같은 이유로 숫자 반복을 과하게 억누르는 경향이 있어 1.05로 낮춤.
+        repetition_penalty=1.05,
         return_full_text=False,
+        logits_processor=LogitsProcessorList(
+            [_StopOnChineseDrift(tokenizer, eos_token_id=tokenizer.eos_token_id)]
+        ),
     )
     chat_model = ChatHuggingFace(llm=HuggingFacePipeline(pipeline=text_gen_pipeline))
     _local_chat_model_cache[model_id] = chat_model

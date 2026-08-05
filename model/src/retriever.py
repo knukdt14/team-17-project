@@ -42,8 +42,10 @@ def chunks_to_documents(chunks: List[Chunk]) -> List[Document]:
 # ---------------------------------------------------------------------------
 # Chroma
 # ---------------------------------------------------------------------------
-def build_chroma(model_key: str, chunks: List[Chunk], base_dir: str = ".") -> Chroma:
-    embeddings = get_embedding_model(model_key)
+def build_chroma(
+    model_key: str, chunks: List[Chunk], base_dir: str = ".", embedding_device: str | None = None
+) -> Chroma:
+    embeddings = get_embedding_model(model_key, device=embedding_device)
     persist_dir = _db_dir("chroma", model_key, base_dir)
     docs = chunks_to_documents(chunks)
     return Chroma.from_documents(
@@ -55,8 +57,8 @@ def build_chroma(model_key: str, chunks: List[Chunk], base_dir: str = ".") -> Ch
     )
 
 
-def load_chroma(model_key: str, base_dir: str = ".") -> Chroma:
-    embeddings = get_embedding_model(model_key)
+def load_chroma(model_key: str, base_dir: str = ".", embedding_device: str | None = None) -> Chroma:
+    embeddings = get_embedding_model(model_key, device=embedding_device)
     persist_dir = _db_dir("chroma", model_key, base_dir)
     return Chroma(
         persist_directory=persist_dir,
@@ -80,8 +82,10 @@ def _chroma_has_data(model_key: str, base_dir: str = ".") -> bool:
 # ---------------------------------------------------------------------------
 # FAISS
 # ---------------------------------------------------------------------------
-def build_faiss(model_key: str, chunks: List[Chunk], base_dir: str = ".") -> FAISS:
-    embeddings = get_embedding_model(model_key)
+def build_faiss(
+    model_key: str, chunks: List[Chunk], base_dir: str = ".", embedding_device: str | None = None
+) -> FAISS:
+    embeddings = get_embedding_model(model_key, device=embedding_device)
     persist_dir = _db_dir("faiss", model_key, base_dir)
     docs = chunks_to_documents(chunks)
     vectorstore = FAISS.from_documents(docs, embeddings)
@@ -89,8 +93,8 @@ def build_faiss(model_key: str, chunks: List[Chunk], base_dir: str = ".") -> FAI
     return vectorstore
 
 
-def load_faiss(model_key: str, base_dir: str = ".") -> FAISS:
-    embeddings = get_embedding_model(model_key)
+def load_faiss(model_key: str, base_dir: str = ".", embedding_device: str | None = None) -> FAISS:
+    embeddings = get_embedding_model(model_key, device=embedding_device)
     persist_dir = _db_dir("faiss", model_key, base_dir)
     return FAISS.load_local(persist_dir, embeddings, allow_dangerous_deserialization=True)
 
@@ -108,19 +112,23 @@ def _faiss_has_data(model_key: str, base_dir: str = ".") -> bool:
 # 통합 헬퍼
 # ---------------------------------------------------------------------------
 def get_or_build_store(
-    backend: Literal["chroma", "faiss"], model_key: str, chunks: List[Chunk], base_dir: str = "."
+    backend: Literal["chroma", "faiss"],
+    model_key: str,
+    chunks: List[Chunk],
+    base_dir: str = ".",
+    embedding_device: str | None = None,
 ):
     """이미 만들어진 벡터DB가 있으면 재사용하고, 없을 때만 새로 임베딩해서 구축."""
     if backend == "chroma":
         if _chroma_has_data(model_key, base_dir):
             print(f"  (기존 chroma_db_{model_key} 재사용)")
-            return load_chroma(model_key, base_dir)
-        return build_chroma(model_key, chunks, base_dir)
+            return load_chroma(model_key, base_dir, embedding_device=embedding_device)
+        return build_chroma(model_key, chunks, base_dir, embedding_device=embedding_device)
     else:
         if _faiss_has_data(model_key, base_dir):
             print(f"  (기존 faiss_db_{model_key} 재사용)")
-            return load_faiss(model_key, base_dir)
-        return build_faiss(model_key, chunks, base_dir)
+            return load_faiss(model_key, base_dir, embedding_device=embedding_device)
+        return build_faiss(model_key, chunks, base_dir, embedding_device=embedding_device)
 
 
 def get_retriever(vectorstore, search_type: str = "similarity", k: int = 5):
