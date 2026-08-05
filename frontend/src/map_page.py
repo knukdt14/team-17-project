@@ -4,9 +4,12 @@ map_page.py
 - 좌표를 직접 관리하지 않고, 카카오맵 JS SDK로 장소(POI)를 검색해 마커를 찍는다
   (서버/모델 쪽 코드 변경 불필요).
 - Kakao Geocoder(주소 검색)는 도로명/지번 주소만 인식해서 "5층 교육장"처럼 건물명 뒤에
-  층/호실이 붙은 우리 데이터는 검색이 거의 실패한다. 대신 장소(POI) 검색인
-  Places.keywordSearch를 쓰되, 검색어에서 층/교육장 표기를 빼고 건물명만 넘겨야
-  실제 POI와 매칭될 확률이 높다. 실패하면 원본 전체 문자열로 주소 검색을 한 번 더 시도한다.
+  층/호실이 붙은 우리 데이터는 검색이 거의 실패한다. 검색은 3단계 폴백으로 진행한다:
+  1) 장소(POI) 검색 Places.keywordSearch(건물명) - 등록된 유명 장소면 여기서 바로 잡힘
+  2) 실패하면 _KNOWN_ADDRESSES에 등록해둔 실제 도로명주소로 Geocoder.addressSearch
+     (대학 내부 교육관처럼 POI로 등록 안 된 건물을 위한 보강 - 좌표를 사람이 직접
+     추정하지 않고, 검증된 정식 주소를 카카오 자체 지오코더에 맡긴다)
+  3) 그래도 실패하면 원본 전체 문자열(예: "경일대학교 산학교육관 6층 교육장")로 마지막 시도
 - "카카오맵으로 길찾기" 버튼은 카카오맵 앱/웹으로 여는 딥링크일 뿐이라 Directions API를
   호출하지 않는다. 도착지만 넘기면 출발지(현재 위치)는 카카오맵 앱이 알아서 잡는다.
 - KAKAO_JS_KEY가 없으면 지도 없이 딥링크 버튼만 보여준다.
@@ -30,6 +33,19 @@ _SUFFIX_RE = re.compile(r"\s*(?:\d+층\s*)?교육장(?:\s*\d+(?:,\s*\d+)*)?\s*$|
 def _place_keyword(location: str) -> str:
     simplified = _SUFFIX_RE.sub("", location).strip()
     return simplified or location
+
+
+# keywordSearch(POI 검색)이 등록 안 된 건물명(예: 대학 내부 특정 교육관)에서 실패할 때를
+# 대비한 폴백. 건물명을 실제 도로명주소로 매핑해두면 Kakao Geocoder가 거의 항상 정확히
+# 찾아준다 (사람이 좌표를 직접 추정/하드코딩하지 않아도 됨). _place_keyword()로 뽑은
+# 건물명이 key라서, cohorts.py에 새 장소가 추가돼도 여기 없으면 기존 로직(keywordSearch
+# -> 원본 문자열 addressSearch)으로 자연스럽게 폴백된다.
+_KNOWN_ADDRESSES = {
+    "포항시 북구청 문화예술팩토리": "경북 포항시 북구 삼호로 36",
+    "경북대학교 복현회관": "대구광역시 북구 대학로 80",
+    "경일대학교 산학교육관": "경상북도 경산시 하양읍 가마실길 50",
+    "대구 스마트시티센터": "대구광역시 수성구 유니버시아드로 119",
+}
 
 
 @ui.page("/map")
@@ -62,6 +78,7 @@ def map_page():
         return
 
     keyword = _place_keyword(location)
+    known_address = _KNOWN_ADDRESSES.get(keyword)
 
     with ui.card().classes("w-full p-3"):
         ui.html(
@@ -90,6 +107,7 @@ def map_page():
           (function() {{
             var keyword = {json.dumps(keyword)};
             var fullAddress = {json.dumps(location)};
+            var knownAddress = {json.dumps(known_address)};
 
             function showError(container, msg) {{
               container.innerHTML = "<p style='padding:16px;color:#c0392b;font-size:0.85rem;'>" + msg + "</p>";
@@ -128,20 +146,37 @@ def map_page():
                   }}
                 }}
 
+                var geocoder = new kakao.maps.services.Geocoder();
+
+                function geocodeAddress(address, label, onFail) {{
+                  geocoder.addressSearch(address, function(result, gStatus) {{
+                    if (gStatus === kakao.maps.services.Status.OK) {{
+                      placeMarker(result[0].y, result[0].x, label);
+                    }} else {{
+                      onFail();
+                    }}
+                  }});
+                }}
+
+                function finalFallback() {{
+                  geocodeAddress(fullAddress, fullAddress, function() {{
+                    showError(container, "지도를 표시할 수 없습니다 (장소를 찾지 못했어요). 길찾기 버튼으로 검색해주세요.");
+                  }});
+                }}
+
                 var places = new kakao.maps.services.Places();
                 places.keywordSearch(keyword, function(data, status) {{
                   if (status === kakao.maps.services.Status.OK && data.length > 0) {{
                     placeMarker(data[0].y, data[0].x, keyword);
                     return;
                   }}
-                  var geocoder = new kakao.maps.services.Geocoder();
-                  geocoder.addressSearch(fullAddress, function(result, gStatus) {{
-                    if (gStatus === kakao.maps.services.Status.OK) {{
-                      placeMarker(result[0].y, result[0].x, fullAddress);
-                    }} else {{
-                      showError(container, "지도를 표시할 수 없습니다 (장소를 찾지 못했어요). 길찾기 버튼으로 검색해주세요.");
-                    }}
-                  }});
+                  // 대학 내부 교육관처럼 keywordSearch(POI 검색)로는 안 잡히는 건물은,
+                  // 등록해둔 실제 도로명주소로 한 번 더 시도한다 (있으면 거의 항상 성공).
+                  if (knownAddress) {{
+                    geocodeAddress(knownAddress, knownAddress, finalFallback);
+                  }} else {{
+                    finalFallback();
+                  }}
                 }}, {{ location: center, radius: 20000 }});
               }} catch (err) {{
                 showError(container, "지도를 불러오는 중 오류가 발생했습니다 (" + err.message + "). 길찾기 버튼으로 이용해주세요.");
