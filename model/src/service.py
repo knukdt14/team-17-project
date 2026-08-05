@@ -7,6 +7,7 @@ service.py
 
 import json
 import os
+import re
 import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -108,23 +109,47 @@ def _sse(data: dict) -> str:
     return f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
 
 
+_WORD_RE = re.compile(r"[가-힣A-Za-z0-9]+")
+
+
+def _word_overlap(a: str, b: str) -> float:
+    """단어 집합 Jaccard 유사도. 검색 순위(하이브리드 리트리버가 매긴 순서)는 질문과 문서의
+    관련성만 볼 뿐이라, 실제로 LLM이 생성한 답변과는 동떨어진 문서(예: 서식 첨부 페이지)가
+    1등으로 뽑히는 경우가 실측으로 확인됨. 그래서 생성된 답변 자체와 각 후보 문서의 단어가
+    얼마나 겹치는지를 다시 봐서, "실제로 답변에 쓰인 것 같은" 문서를 고르는 데 씀."""
+    set_a = set(_WORD_RE.findall(a))
+    set_b = set(_WORD_RE.findall(b))
+    if not set_a or not set_b:
+        return 0.0
+    return len(set_a & set_b) / len(set_a | set_b)
+
+
 def _stream_answer(question: str):
     """검색 -> LLM 스트리밍 -> 마지막에 근거 문서(sources) 순서로 SSE 이벤트를 흘려보낸다.
     generate가 끝나기 전에 다음 요청이 GPU를 밟지 않도록, 스트림 소비가 끝날 때까지 gpu_lock을 쥔다."""
+    answer_parts = []
     with gpu_lock:
         docs = state["retriever"].invoke(question)
         context = format_docs(docs)
         for token in state["chain"].stream({"context": context, "question": question}):
+            answer_parts.append(token)
             yield _sse({"token": token})
 
-    sources = [
-        {
-            "filename": doc.metadata.get("source"),
-            "page": doc.metadata.get("page_num"),
-            "text": doc.page_content,
-        }
-        for doc in docs
-    ]
+    # 검색 순위 1등이 아니라, 실제로 생성된 답변과 단어가 가장 많이 겹치는 문서를
+    # "답변에 가장 큰 영향을 준 근거" 1건으로 고른다.
+    answer = "".join(answer_parts)
+    top_doc = max(docs, key=lambda d: _word_overlap(answer, d.page_content)) if docs else None
+    sources = (
+        [
+            {
+                "filename": top_doc.metadata.get("source"),
+                "page": top_doc.metadata.get("page_num"),
+                "text": top_doc.page_content,
+            }
+        ]
+        if top_doc
+        else []
+    )
     yield _sse({"sources": sources})
     yield "data: [DONE]\n\n"
 
