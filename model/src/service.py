@@ -124,6 +124,34 @@ def _word_overlap(a: str, b: str) -> float:
     return len(set_a & set_b) / len(set_a | set_b)
 
 
+_ARTICLE_HEADER_RE = re.compile(r"제\s*\d+\s*조(?:의\s*\d+)?\s*\([^)]{0,40}\)")
+
+
+def _best_snippet(answer: str, text: str) -> str:
+    """청크 전체(최대 chunk_size)를 그대로 보여주는 대신, 답변과 실제 관련 있는 부분만 잘라서
+    보여준다. 청크 하나에 여러 조항/서식이 같이 들어있는 경우가 있어(chunk_size 기준 분할이라
+    항상 조 단위로 안 끊김) 전체를 보여주면 관련 없는 내용까지 다 나오는 문제가 있었음.
+
+    "제O조(...)" 헤더가 있는 조항형 문서는 그 조 전체 구간만 잘라서 반환하고, 헤더가 없는
+    문서(서식 등 조항 구조가 아닌 PDF)는 답변과 가장 겹치는 줄 주변 몇 줄만 잘라서 반환한다."""
+    headers = list(_ARTICLE_HEADER_RE.finditer(text))
+    if headers:
+        spans = []
+        for i, h in enumerate(headers):
+            start = h.start()
+            end = headers[i + 1].start() if i + 1 < len(headers) else len(text)
+            spans.append(text[start:end].strip())
+        return max(spans, key=lambda s: _word_overlap(answer, s))
+
+    lines = [ln for ln in text.split("\n") if ln.strip()]
+    if not lines:
+        return text
+    best_idx = max(range(len(lines)), key=lambda i: _word_overlap(answer, lines[i]))
+    start = max(0, best_idx - 1)
+    end = min(len(lines), best_idx + 2)
+    return "\n".join(lines[start:end])
+
+
 def _stream_answer(question: str):
     """검색 -> LLM 스트리밍 -> 마지막에 근거 문서(sources) 순서로 SSE 이벤트를 흘려보낸다.
     generate가 끝나기 전에 다음 요청이 GPU를 밟지 않도록, 스트림 소비가 끝날 때까지 gpu_lock을 쥔다."""
@@ -144,7 +172,7 @@ def _stream_answer(question: str):
             {
                 "filename": top_doc.metadata.get("source"),
                 "page": top_doc.metadata.get("page_num"),
-                "text": top_doc.page_content,
+                "text": _best_snippet(answer, top_doc.page_content),
             }
         ]
         if top_doc
