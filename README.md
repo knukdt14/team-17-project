@@ -12,14 +12,16 @@ frontend가 model을 직접 호출하도록 단순화했다.
 ## 아키텍처
 
 ```
-[frontend]  Streamlit UI (8501)
+[frontend]  NiceGUI UI (8501)
     │  HTTP (/ask - SSE 스트리밍, /ingest)
     ▼
 [model]     FastAPI 추론 서비스 (8100) - loader/chunker/embedder/retriever/rag_chain 실행
 ```
 
 - **frontend**: 사용자가 보는 챗봇 화면. model에 직접 요청하고, 답변은 토큰 단위로
-  스트리밍 받아 그대로 렌더링한다(`st.write_stream`).
+  스트리밍 받아 그대로 렌더링한다. 원래 Streamlit이었는데 매 인터랙션마다 전체 스크립트가
+  재실행되는 구조라 세밀한 디자인/애니메이션에 한계가 있어서, 여전히 순수 Python으로
+  작성하면서도 실제 컴포넌트 기반으로 동작하는 NiceGUI(FastAPI+Vue/Quasar 기반)로 옮겼다.
 - **model**: 실제 RAG 파이프라인(PDF 로딩→청킹→임베딩→검색→LLM 생성)을 돌리는 서비스.
   서버 시작 시 한 번 벡터스토어를 준비해두고 재사용하며, 요청 검증/에러 처리도 여기서 담당한다.
 
@@ -44,11 +46,17 @@ team-17-project/
     ├── Dockerfile
     ├── requirements.txt
     └── src/
-        ├── app.py            # Streamlit 진입점 (페이지 라우팅)
+        ├── main.py           # NiceGUI 진입점 (페이지 모듈 import + ui.run)
+        ├── theme.py          # 브랜드 컬러/헤더/좌측 네비게이션(공통 프레임)
         ├── auth.py           # 관리자 로그인
+        ├── cohorts.py        # 기수별 정적 정보(교육기간/장소/혜택 등)
+        ├── landing.py        # 기수 선택 화면 ("/")
         ├── chat_page.py      # 챗봇 화면
+        ├── schedule_page.py  # 일정 화면
+        ├── map_page.py       # 오시는길(카카오맵) 화면
+        ├── classroom_page.py # 강의실 사진 화면
         ├── admin_page.py     # 관리자 - PDF 업로드
-        ├── sources.py        # 출처 카드 UI
+        ├── sources.py        # 출처 팝오버 UI
         └── api_client.py     # model 호출 (요청/스트리밍/에러 처리 공통화)
 ```
 

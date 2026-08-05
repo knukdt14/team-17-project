@@ -6,31 +6,34 @@ classroom_page.py
 
 import os
 
-import streamlit as st
+from nicegui import app, ui
 
 from cohorts import get_cohort
-from theme import page_header
+from theme import frame, page_header
 
 ASSETS_DIR = os.path.join(os.path.dirname(__file__), "..", "assets")
 
 
-def render():
-    cohort = st.session_state.get("selected_cohort")
-    data = get_cohort(cohort)
-
+@ui.page("/classroom")
+def classroom_page():
+    frame(current_path="/classroom")
     page_header("🏫", "강의실 사진")
+
+    cohort = app.storage.user.get("selected_cohort")
+    data = get_cohort(cohort)
     if not data:
-        st.warning("먼저 기수를 선택해주세요.")
+        ui.label("먼저 기수를 선택해주세요.").classes("text-gray-500 m-4")
         return
 
     photo = data.get("photo")
     if not photo:
-        st.info(f"{cohort} 강의실 사진은 아직 준비 중입니다.")
+        ui.label(f"{cohort} 강의실 사진은 아직 준비 중입니다.").classes("text-gray-500")
         return
 
     photo_path = os.path.join(ASSETS_DIR, photo)
     if not os.path.exists(photo_path):
-        st.warning(f"사진 파일을 찾을 수 없습니다: {photo}")
+        ui.label(f"사진 파일을 찾을 수 없습니다: {photo}").classes("text-amber-600")
         return
 
-    st.image(photo_path, caption=f"{cohort} 강의실", use_container_width=True)
+    ui.image(photo_path).classes("w-full rounded-2xl shadow-md")
+    ui.label(f"{cohort} 강의실").classes("text-gray-500 text-sm text-center mt-2")

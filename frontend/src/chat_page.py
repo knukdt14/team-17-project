@@ -1,13 +1,15 @@
 """
 chat_page.py
 - 사용자용 챗봇 화면. model과의 통신은 api_client를 통해서만 한다.
+- 대화 기록은 app.storage.user에 저장한다 (각 @ui.page 이동은 실제 페이지 전환이라,
+  브라우저 쿠키 기반 저장소가 아니면 다른 탭으로 갔다 오는 사이 기록이 날아간다).
 """
 
-import streamlit as st
+from nicegui import app, ui
 
 from api_client import ModelServiceError, ask_stream, send_feedback
 from sources import render_sources
-from theme import page_header
+from theme import frame, page_header
 
 # 챗봇 화면에 바로 보여줄 자주 묻는 질문(규정 관련 위주).
 # 일정처럼 기수마다 값이 달라지는 정보는 여기 넣지 않는다 — 벡터DB가 기수 구분 없이
@@ -18,98 +20,113 @@ FAQ_QUESTIONS = [
     "훈련장려금은 어떻게 지급되나요?",
 ]
 
-# 기본 로봇/사람 이모지 대신 브랜드 톤(🎓)에 맞춘 아바타로 통일한다.
 AVATARS = {"user": "🙂", "assistant": "🎓"}
 
 
-def _render_feedback(idx: int, message: dict):
-    """답변 아래 👍/👎 버튼. 누르면 model로 피드백을 보낸다 (model에 엔드포인트가
-    아직 없어도 조용히 무시되므로 안전). 같은 평가를 매 rerun마다 중복 전송하지 않도록
-    message에 마지막으로 보낸 값을 기록해둔다.
-    """
-    rating_idx = st.feedback("thumbs", key=f"feedback_{idx}")
-    if rating_idx is None:
+@ui.page("/chat")
+def chat_page():
+    frame(current_path="/chat")
+
+    if not app.storage.user.get("selected_cohort"):
+        ui.label("먼저 기수를 선택해주세요.").classes("text-gray-500 m-4")
+        ui.link("기수 선택하러 가기", "/").classes("m-4")
         return
-    rating = "up" if rating_idx == 1 else "down"
-    if message.get("feedback_sent") != rating:
-        send_feedback(question=message.get("question", ""), answer=message["content"], rating=rating)
-        message["feedback_sent"] = rating
 
+    page_header("💬", "KDT 규정집 챗봇", "국민내일배움카드 / KDT 규정집 등 사내 규정에 대해 물어보세요.")
 
-def _ask(question: str):
-    """질문 하나를 처리해서 화면에 그린다. st.chat_input으로 직접 입력한 경우와
-    FAQ 버튼을 클릭한 경우가 완전히 동일하게 동작하도록 이 함수 하나로 모은다.
-    """
-    st.session_state.messages.append({"role": "user", "content": question})
-    with st.chat_message("user", avatar=AVATARS["user"]):
-        st.markdown(question)
+    messages: list = app.storage.user.setdefault("chat_messages", [])
+    chat_box = ui.column().classes("w-full gap-2")
+    faq_box = ui.row().classes("w-full gap-2 flex-wrap mb-3")
+    input_row = ui.row().classes("w-full items-center gap-2 mt-2")
 
-    with st.chat_message("assistant", avatar=AVATARS["assistant"]):
-        spinner_text = (
-            "🧠 모델을 처음 준비하는 중이에요. 첫 응답은 조금 더 걸릴 수 있어요..."
-            if not st.session_state.asked_once
-            else "💬 답변 생성 중..."
-        )
+    def _feedback_row(message: dict):
+        async def _send(rating: str):
+            if message.get("feedback_sent") == rating:
+                return
+            message["feedback_sent"] = rating
+            await send_feedback(message.get("question", ""), message["content"], rating)
 
-        answer = ""
-        sources: list = []
+        with ui.row().classes("gap-1 mt-1 -ml-2"):
+            ui.button(icon="thumb_up", on_click=lambda: _send("up")).props("flat dense round size=sm")
+            ui.button(icon="thumb_down", on_click=lambda: _send("down")).props("flat dense round size=sm")
+
+    def _render_history_message(message: dict):
+        with chat_box:
+            with ui.chat_message(
+                name=AVATARS.get(message["role"], ""), sent=(message["role"] == "user")
+            ).classes("w-full"):
+                if message.get("is_error"):
+                    ui.label(message["content"]).classes("text-red-500")
+                else:
+                    ui.markdown(message["content"])
+                    if message["role"] == "assistant":
+                        render_sources(message.get("sources"))
+                        _feedback_row(message)
+
+    for m in messages:
+        _render_history_message(m)
+
+    async def _ask(question: str):
+        faq_box.clear()
+
+        messages.append({"role": "user", "content": question})
+        with chat_box:
+            with ui.chat_message(name=AVATARS["user"], sent=True).classes("w-full"):
+                ui.markdown(question)
+
+        answer = {"text": ""}
+        with chat_box:
+            with ui.chat_message(name=AVATARS["assistant"]).classes("w-full") as msg:
+                content_md = ui.markdown("")
+                spinner = ui.spinner("dots", size="2em", color="primary")
+
+        def on_token(token: str):
+            answer["text"] += token
+            content_md.set_content(answer["text"])
+            spinner.set_visibility(False)
+
         is_error = False
+        sources: list = []
+        try:
+            sources = await ask_stream(question, on_token)
+        except ModelServiceError as e:
+            answer["text"] = str(e)
+            content_md.set_content(answer["text"])
+            content_md.classes("text-red-500")
+            is_error = True
 
-        with st.spinner(spinner_text):
-            try:
-                answer = st.write_stream(ask_stream(question, sources_out=sources))
-            except ModelServiceError as e:
-                answer = str(e)
-                is_error = True
-
-        st.session_state.asked_once = True
-
-        if is_error:
-            st.error(answer)
-        else:
-            render_sources(sources)
-
-    st.session_state.messages.append(
-        {
+        spinner.delete()
+        assistant_message = {
             "role": "assistant",
-            "content": answer,
+            "content": answer["text"],
             "sources": sources,
             "is_error": is_error,
             "question": question,
         }
-    )
+        messages.append(assistant_message)
 
+        if not is_error:
+            with msg:
+                render_sources(sources)
+                _feedback_row(assistant_message)
 
-def render():
-    page_header("💬", "KDT 규정집 챗봇", "국민내일배움카드 / KDT 규정집 등 사내 규정에 대해 물어보세요.")
+    async def _submit():
+        q = question_input.value.strip() if question_input.value else ""
+        if not q:
+            return
+        question_input.value = ""
+        await _ask(q)
 
-    if "messages" not in st.session_state:
-        st.session_state.messages = []
-    if "asked_once" not in st.session_state:
-        # 모델 최초 로딩 안내용: 첫 질문 전/후를 구분해 스피너 문구를 다르게 보여준다.
-        st.session_state.asked_once = False
+    if not messages:
+        with faq_box:
+            ui.label("💡 자주 묻는 질문").classes("text-sm text-gray-500 w-full")
+            for q in FAQ_QUESTIONS:
+                ui.button(q, on_click=lambda q=q: _ask(q)).props("outline no-caps color=primary").classes(
+                    "text-xs normal-case"
+                )
 
-    for idx, message in enumerate(st.session_state.messages):
-        with st.chat_message(message["role"], avatar=AVATARS.get(message["role"])):
-            if message.get("is_error"):
-                st.error(message["content"])
-            else:
-                st.markdown(message["content"])
-                render_sources(message.get("sources"))
-                if message["role"] == "assistant":
-                    _render_feedback(idx, message)
-
-    pending_question = None
-
-    if not st.session_state.messages:
-        st.markdown("💡 **자주 묻는 질문**")
-        cols = st.columns(len(FAQ_QUESTIONS))
-        for col, q in zip(cols, FAQ_QUESTIONS):
-            if col.button(q, use_container_width=True, key=f"faq_{q}"):
-                pending_question = q
-
-    typed_question = st.chat_input("질문을 입력하세요.")
-    question = pending_question or typed_question
-
-    if question:
-        _ask(question)
+    with input_row:
+        question_input = ui.input(placeholder="질문을 입력하세요.").classes("flex-grow").on(
+            "keydown.enter", _submit
+        )
+        ui.button(icon="send", on_click=_submit).props("round color=primary")

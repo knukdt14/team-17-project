@@ -1,13 +1,14 @@
 """
 auth.py
-- 관리자 로그인/권한 체크. 회원가입 없이 관리자 비밀번호 하나만 관리하는 단순 구조
-  (실사용 전환 시 사용자별 계정이 필요해지면 이 모듈만 교체하면 됨).
+- 관리자 로그인/권한 체크. 회원가입 없이 관리자 비밀번호 하나만 관리하는 단순 구조.
+- 로그인 상태는 app.storage.user(브라우저별 서명 쿠키 세션)에 저장돼서, 페이지를
+  이동해도(각 @ui.page는 별도 HTTP 요청) 로그인이 풀리지 않는다.
 - ADMIN_PASSWORD 환경변수로 비밀번호를 바꿀 수 있다. 미설정 시 기본값을 쓰고 경고를 보여준다.
 """
 
 import os
 
-import streamlit as st
+from nicegui import app, ui
 
 _DEFAULT_ADMIN_PASSWORD = "changeme"
 _SESSION_KEY = "is_admin"
@@ -18,33 +19,41 @@ def _admin_password() -> str:
 
 
 def is_admin() -> bool:
-    return bool(st.session_state.get(_SESSION_KEY, False))
+    return bool(app.storage.user.get(_SESSION_KEY, False))
 
 
 def render_login_widget():
-    """작은 로그인 버튼(팝오버) 하나를 그 자리에 그린다. 배치(사이드바/상단바 등)는
-    호출하는 쪽(theme.render_topbar)이 결정하고, 이 함수는 로그인 로직/내용에만 집중한다."""
+    """헤더 우측에 작은 로그인 버튼(팝오버 메뉴) 하나를 그린다. 배치는 호출하는 쪽
+    (theme.frame)이 결정하고, 이 함수는 로그인 로직/내용에만 집중한다."""
     if is_admin():
-        with st.popover("🔑", use_container_width=True):
-            st.caption("관리자로 로그인됨")
-            if st.button("로그아웃", use_container_width=True, key="admin_logout_btn"):
-                st.session_state[_SESSION_KEY] = False
-                st.rerun()
+        with ui.button("🔑").props("flat round dense"):
+            with ui.menu().classes("p-3"):
+                with ui.column().classes("gap-2 w-48"):
+                    ui.label("관리자로 로그인됨").classes("text-sm text-gray-500")
+
+                    def _logout():
+                        app.storage.user[_SESSION_KEY] = False
+                        ui.navigate.reload()
+
+                    ui.button("로그아웃", on_click=_logout).props("flat").classes("w-full")
     else:
-        with st.popover("🔒", use_container_width=True):
-            st.caption("관리자 로그인")
-            pw = st.text_input(
-                "비밀번호",
-                type="password",
-                key="admin_pw_input",
-                label_visibility="collapsed",
-                placeholder="비밀번호",
-            )
-            if st.button("로그인", use_container_width=True, key="admin_login_btn"):
-                if pw and pw == _admin_password():
-                    st.session_state[_SESSION_KEY] = True
-                    st.rerun()
-                else:
-                    st.error("비밀번호가 올바르지 않습니다.")
-            if _admin_password() == _DEFAULT_ADMIN_PASSWORD:
-                st.caption("⚠️ ADMIN_PASSWORD 환경변수 미설정 — 기본값 사용 중")
+        with ui.button("🔒").props("flat round dense"):
+            with ui.menu().classes("p-3"):
+                with ui.column().classes("gap-2 w-56"):
+                    ui.label("관리자 로그인").classes("text-sm font-bold")
+                    pw = ui.input(placeholder="비밀번호", password=True).classes("w-full")
+                    error_label = ui.label("").classes("text-red-500 text-xs")
+
+                    def _login():
+                        if pw.value and pw.value == _admin_password():
+                            app.storage.user[_SESSION_KEY] = True
+                            ui.navigate.reload()
+                        else:
+                            error_label.text = "비밀번호가 올바르지 않습니다."
+
+                    pw.on("keydown.enter", _login)
+                    ui.button("로그인", on_click=_login).classes("w-full")
+                    if _admin_password() == _DEFAULT_ADMIN_PASSWORD:
+                        ui.label("⚠️ ADMIN_PASSWORD 환경변수 미설정 — 기본값 사용 중").classes(
+                            "text-amber-600 text-xs"
+                        )

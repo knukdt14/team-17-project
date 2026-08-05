@@ -14,7 +14,5 @@ model/uploads/
 faiss_db_*/
 chroma_db_*/
 
-.streamlit/
-# 위 규칙이 frontend/.streamlit/(테마 설정, git으로 관리돼야 함)까지 가리지 않도록 예외 처리
-!frontend/.streamlit/
-!frontend/.streamlit/config.toml
+# frontend는 NiceGUI로 전환하면서 app.storage.user가 컨테이너 안에 파일로 저장하는 캐시.
+frontend/.nicegui/
