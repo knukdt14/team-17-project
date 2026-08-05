@@ -9,7 +9,7 @@ services:
       # Qwen2.5-7B 가중치(~4GB)를 컨테이너 재생성마다 다시 받지 않도록 HF 캐시를 볼륨으로 유지
       - hf_cache:/root/.cache/huggingface
     ports:
-      - "8100:8100"   # 디버깅용 (backend는 내부 네트워크로 접근)
+      - "8100:8100"
     restart: unless-stopped
     deploy:
       resources:
@@ -19,22 +19,12 @@ services:
               count: 1
               capabilities: [gpu]
 
-  backend:
-    build: ./backend
+  frontend:
+    build: ./frontend
     environment:
       MODEL_SERVICE_URL: http://model:8100
     depends_on:
       - model
-    ports:
-      - "8000:8000"
-    restart: unless-stopped
-
-  frontend:
-    build: ./frontend
-    environment:
-      BACKEND_URL: http://backend:8000
-    depends_on:
-      - backend
     ports:
       - "8501:8501"
     restart: unless-stopped

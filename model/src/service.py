@@ -1,7 +1,7 @@
 """
 service.py
 - model 컨테이너의 FastAPI 서버: RAG 파이프라인(loader/chunker/embedder/retriever/rag_chain)을
-  실제로 실행하는 추론 서비스. backend가 이 서비스를 HTTP로 호출한다.
+  실제로 실행하는 추론 서비스. frontend(Streamlit)가 이 서비스를 직접 HTTP로 호출한다.
 - 서버 시작 시(lifespan) PDF 로딩 + 벡터스토어 준비 + LLM 체인 구성을 한 번만 수행한다.
 """
 
@@ -12,6 +12,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
@@ -70,6 +71,13 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="KDT 규정집 RAG 모델 서비스", lifespan=lifespan)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # frontend(8501) <-> model(8100) 간 크로스 오리진 허용 (데모용)
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 class AskRequest(BaseModel):
