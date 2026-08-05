@@ -82,19 +82,3 @@ async def upload_pdf(filename: str, content: bytes) -> dict:
         raise ModelServiceError("🔌 서버에 연결할 수 없습니다. 잠시 후 다시 시도해주세요.") from e
     except httpx.HTTPError as e:
         raise ModelServiceError(f"❌ 업로드 실패: {e}") from e
-
-
-async def send_feedback(question: str, answer: str, rating: str) -> None:
-    """답변 👍/👎 피드백을 model로 보낸다.
-    model에 /feedback 엔드포인트가 아직 없어서 실패해도 사용자에게 에러를 보여주지 않고
-    조용히 무시한다 (나중에 model이 엔드포인트를 추가하면 이 함수는 그대로 두고 자동으로
-    저장되기 시작함).
-    """
-    try:
-        async with httpx.AsyncClient(timeout=5) as client:
-            await client.post(
-                f"{MODEL_SERVICE_URL}/feedback",
-                json={"question": question, "answer": answer, "rating": rating},
-            )
-    except httpx.HTTPError:
-        pass

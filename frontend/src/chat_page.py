@@ -7,7 +7,7 @@ chat_page.py
 
 from nicegui import app, ui
 
-from api_client import ModelServiceError, ask_stream, send_feedback
+from api_client import ModelServiceError, ask_stream
 from sources import render_sources
 from theme import frame, page_header
 
@@ -20,7 +20,8 @@ FAQ_QUESTIONS = [
     "훈련장려금은 어떻게 지급되나요?",
 ]
 
-AVATARS = {"user": "🙂", "assistant": "🎓"}
+# 이모지 아바타 대신 말풍선 위에 붙는 작은 텍스트 라벨로 - q-chat-message의 name 속성.
+LABELS = {"user": "사용자", "assistant": "AI 어시스턴트"}
 
 
 @ui.page("/chat")
@@ -39,21 +40,10 @@ def chat_page():
     faq_box = ui.row().classes("w-full gap-2 flex-wrap mb-3")
     input_row = ui.row().classes("w-full items-center gap-2 mt-2")
 
-    def _feedback_row(message: dict):
-        async def _send(rating: str):
-            if message.get("feedback_sent") == rating:
-                return
-            message["feedback_sent"] = rating
-            await send_feedback(message.get("question", ""), message["content"], rating)
-
-        with ui.row().classes("gap-1 mt-1 -ml-2"):
-            ui.button(icon="thumb_up", on_click=lambda: _send("up")).props("flat dense round size=sm")
-            ui.button(icon="thumb_down", on_click=lambda: _send("down")).props("flat dense round size=sm")
-
     def _render_history_message(message: dict):
         with chat_box:
             with ui.chat_message(
-                name=AVATARS.get(message["role"], ""), sent=(message["role"] == "user")
+                name=LABELS.get(message["role"], ""), sent=(message["role"] == "user")
             ).classes("w-full"):
                 if message.get("is_error"):
                     ui.label(message["content"]).classes("text-red-500")
@@ -61,7 +51,6 @@ def chat_page():
                     ui.markdown(message["content"])
                     if message["role"] == "assistant":
                         render_sources(message.get("sources"))
-                        _feedback_row(message)
 
     for m in messages:
         _render_history_message(m)
@@ -71,12 +60,12 @@ def chat_page():
 
         messages.append({"role": "user", "content": question})
         with chat_box:
-            with ui.chat_message(name=AVATARS["user"], sent=True).classes("w-full"):
+            with ui.chat_message(name=LABELS["user"], sent=True).classes("w-full"):
                 ui.markdown(question)
 
         answer = {"text": ""}
         with chat_box:
-            with ui.chat_message(name=AVATARS["assistant"]).classes("w-full") as msg:
+            with ui.chat_message(name=LABELS["assistant"]).classes("w-full") as msg:
                 content_md = ui.markdown("")
                 spinner = ui.spinner("dots", size="2em", color="primary")
 
@@ -96,19 +85,18 @@ def chat_page():
             is_error = True
 
         spinner.delete()
-        assistant_message = {
-            "role": "assistant",
-            "content": answer["text"],
-            "sources": sources,
-            "is_error": is_error,
-            "question": question,
-        }
-        messages.append(assistant_message)
+        messages.append(
+            {
+                "role": "assistant",
+                "content": answer["text"],
+                "sources": sources,
+                "is_error": is_error,
+            }
+        )
 
         if not is_error:
             with msg:
                 render_sources(sources)
-                _feedback_row(assistant_message)
 
     async def _submit():
         q = question_input.value.strip() if question_input.value else ""

@@ -20,7 +20,7 @@ from urllib.parse import quote
 from nicegui import app, ui
 
 from cohorts import get_main_location
-from theme import frame, page_header
+from theme import ACCENT, INK, MUTED, frame, page_header
 
 KAKAO_JS_KEY = os.environ.get("KAKAO_JS_KEY", "")
 
@@ -44,14 +44,18 @@ def map_page():
         ui.label("먼저 기수를 선택해주세요.").classes("text-gray-500")
         return
 
-    page_header("📍", "오시는길", f"{cohort} 교육 장소 · {location}")
+    page_header("📍", "오시는길", "")
 
     search_link = f"https://map.kakao.com/link/search/{quote(location)}"
 
+    with ui.card().classes("w-full p-5 mb-4"):
+        ui.label(cohort).classes("text-xs font-bold").style(f"color:{ACCENT};")
+        ui.label(location).classes("text-lg font-extrabold mt-0.5").style(f"color:{INK};")
+
     if not KAKAO_JS_KEY:
         ui.label("지도 미리보기는 KAKAO_JS_KEY가 설정되면 표시됩니다. 지금은 길찾기 링크만 이용해주세요.").classes(
-            "text-gray-500 mb-3"
-        )
+            "text-sm mb-3"
+        ).style(f"color:{MUTED};")
         ui.link("🚗 카카오맵으로 길찾기", search_link).props("target=_blank").classes(
             "block w-full text-center bg-yellow-300 text-gray-900 font-bold rounded-xl py-3 no-underline"
         )
@@ -59,16 +63,21 @@ def map_page():
 
     keyword = _place_keyword(location)
 
-    ui.html(
-        f"""
-        <div id="kdt-map" style="width:100%;height:400px;border-radius:16px;"></div>
-        <a id="kdt-route-link" href="{search_link}" target="_blank"
-           style="display:inline-block;margin-top:12px;padding:10px 16px;background:#FEE500;
-                  color:#191919;border-radius:12px;text-decoration:none;font-weight:bold;">
-          🚗 카카오맵으로 길찾기
-        </a>
-        """
-    )
+    with ui.card().classes("w-full p-3"):
+        ui.html(
+            f"""
+            <div id="kdt-map" style="width:100%;height:520px;border-radius:12px;"></div>
+            <a id="kdt-route-link" href="{search_link}" target="_blank"
+               style="display:inline-block;margin-top:14px;padding:11px 18px;background:#FEE500;
+                      color:#191919;border-radius:10px;text-decoration:none;font-weight:bold;
+                      font-size:0.9rem;">
+              🚗 카카오맵 앱으로 길찾기
+            </a>
+            <span style="display:inline-block;margin-left:10px;font-size:0.8rem;color:{MUTED};">
+              누르면 카카오맵 앱/웹에서 현재 위치 기준 경로를 바로 안내받을 수 있어요.
+            </span>
+            """
+        )
 
     ui.add_body_html(
         f"""
