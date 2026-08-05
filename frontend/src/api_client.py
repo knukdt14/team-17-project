@@ -19,11 +19,15 @@ class ModelServiceError(Exception):
     """model 호출 실패를 사용자에게 보여줄 메시지와 함께 감싸는 예외."""
 
 
-def ask_stream(question: str, history: list[dict] | None = None):
+def ask_stream(question: str, history: list[dict] | None = None, sources_out: list | None = None):
     """질문을 model의 /ask(SSE)로 보내고 토큰을 하나씩 yield하는 제너레이터.
     st.write_stream()에 그대로 넘기면 토큰이 도착하는 대로 화면에 찍힌다.
     history는 아직 model이 받지 않아도 무해하게 무시되므로(FastAPI/Pydantic 기본 동작이
     정의 안 된 필드를 그냥 버림) 미리 실어 보내도 안전하다.
+
+    sources_out을 넘기면, 스트림 끝에 오는 근거 문서(sources) 이벤트를 토큰으로 yield하지
+    않고 이 리스트에 담아둔다. st.write_stream()은 텍스트만 다루므로 sources처럼 구조화된
+    데이터는 반환값이 아니라 이런 사이드 채널로 꺼내야 함.
     """
     payload: dict = {"question": question}
     if history:
@@ -47,6 +51,10 @@ def ask_stream(question: str, history: list[dict] | None = None):
                 event = json.loads(event_raw)
                 if "error" in event:
                     raise ModelServiceError(f"❌ 죄송합니다, 답변을 가져오지 못했습니다. ({event['error']})")
+                if "sources" in event:
+                    if sources_out is not None:
+                        sources_out.extend(event["sources"])
+                    continue
                 yield event.get("token", "")
     except requests.Timeout as e:
         raise ModelServiceError("⏱️ 죄송합니다, 응답 시간이 초과되었습니다. 잠시 후 다시 시도해주세요.") from e
