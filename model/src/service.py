@@ -7,6 +7,7 @@ service.py
 
 import json
 import os
+import re
 import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -41,7 +42,11 @@ EMBEDDING_MODEL_KEY = "bge_m3"
 # 스트리밍(TextIteratorStreamer 60초 타임아웃)이 실패하는 걸 확인함. 질문 1건 임베딩은 CPU로도
 # 충분히 빠르므로 CPU로 분리해서 GPU를 전부 LLM에 준다.
 EMBEDDING_DEVICE = "cpu"
-LLM_KEY = "hf_local"
+# 로컬 Qwen2.5-7B(4bit)이 가끔 한자/중국어가 섞여 나오는 언어 드리프트가 있어서, API 기반
+# Upstage Solar로 교체함. get_answer_chain이 prompt|llm|StrOutputParser()로 백엔드를
+# 추상화해두고 있어서(rag_chain.get_llm) llm_key만 바꾸면 되고, 나머지 스트리밍/검색 로직은
+# 그대로 재사용된다. UPSTAGE_API_KEY가 .env에 있어야 한다.
+LLM_KEY = "solar"
 PROMPT_STYLE = "service"
 USE_HYBRID_RETRIEVAL = True
 TOP_K = 5
@@ -108,23 +113,88 @@ def _sse(data: dict) -> str:
     return f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
 
 
+_WORD_RE = re.compile(r"[가-힣A-Za-z0-9]+")
+
+
+def _word_overlap(a: str, b: str) -> float:
+    """단어 집합 Jaccard 유사도. 검색 순위(하이브리드 리트리버가 매긴 순서)는 질문과 문서의
+    관련성만 볼 뿐이라, 실제로 LLM이 생성한 답변과는 동떨어진 문서(예: 서식 첨부 페이지)가
+    1등으로 뽑히는 경우가 실측으로 확인됨. 그래서 생성된 답변 자체와 각 후보 문서의 단어가
+    얼마나 겹치는지를 다시 봐서, "실제로 답변에 쓰인 것 같은" 문서를 고르는 데 씀."""
+    set_a = set(_WORD_RE.findall(a))
+    set_b = set(_WORD_RE.findall(b))
+    if not set_a or not set_b:
+        return 0.0
+    return len(set_a & set_b) / len(set_a | set_b)
+
+
+_ARTICLE_HEADER_RE = re.compile(r"제\s*\d+\s*조(?:의\s*\d+)?\s*\([^)]{0,40}\)")
+# "1. ", "5. ", "①", "④" 처럼 상위 항목을 나타내는 줄 - 매칭 라인이 이런 항목 아래 딸려있을 때
+# 그 상위 항목 제목을 같이 보여줘야 "어디 소속 내용인지" 문맥이 살아남
+_HEADING_LINE_RE = re.compile(r"^\s*(?:[①-⑮]|\d{1,2}\s*[.)]\s*\S)")
+
+
+def _best_snippet(answer: str, text: str) -> str:
+    """청크 전체(최대 chunk_size)를 그대로 보여주는 대신, 답변과 실제 관련 있는 부분만 잘라서
+    보여준다. 청크 하나에 여러 조항/서식이 같이 들어있는 경우가 있어(chunk_size 기준 분할이라
+    항상 조 단위로 안 끊김) 전체를 보여주면 관련 없는 내용까지 다 나오는 문제가 있었음.
+
+    "제O조(...)" 헤더가 있는 조항형 문서는 그 조 전체 구간만 잘라서 반환하고, 헤더가 없는
+    문서(서식 등 조항 구조가 아닌 PDF)는 답변과 가장 겹치는 줄 주변 몇 줄만 잘라서 반환한다."""
+    headers = list(_ARTICLE_HEADER_RE.finditer(text))
+    if headers:
+        spans = []
+        for i, h in enumerate(headers):
+            start = h.start()
+            end = headers[i + 1].start() if i + 1 < len(headers) else len(text)
+            spans.append(text[start:end].strip())
+        return max(spans, key=lambda s: _word_overlap(answer, s))
+
+    lines = [ln for ln in text.split("\n") if ln.strip()]
+    if not lines:
+        return text
+    best_idx = max(range(len(lines)), key=lambda i: _word_overlap(answer, lines[i]))
+    start = max(0, best_idx - 2)
+    end = min(len(lines), best_idx + 3)
+
+    # 윈도우 밖(위쪽)에 상위 항목 제목이 있으면 문맥으로 같이 붙인다 (예: 매칭 라인이
+    # "●인정 일수: ..."인데 몇 줄 위의 "5. 질병ㆍ입원"이 그 상위 항목인 경우).
+    heading_idx = None
+    for i in range(start - 1, max(-1, start - 6), -1):
+        if _HEADING_LINE_RE.match(lines[i]):
+            heading_idx = i
+            break
+
+    snippet_lines = ([lines[heading_idx]] if heading_idx is not None else []) + lines[start:end]
+    return "\n".join(snippet_lines)
+
+
 def _stream_answer(question: str):
     """검색 -> LLM 스트리밍 -> 마지막에 근거 문서(sources) 순서로 SSE 이벤트를 흘려보낸다.
     generate가 끝나기 전에 다음 요청이 GPU를 밟지 않도록, 스트림 소비가 끝날 때까지 gpu_lock을 쥔다."""
+    answer_parts = []
     with gpu_lock:
         docs = state["retriever"].invoke(question)
         context = format_docs(docs)
         for token in state["chain"].stream({"context": context, "question": question}):
+            answer_parts.append(token)
             yield _sse({"token": token})
 
-    sources = [
-        {
-            "filename": doc.metadata.get("source"),
-            "page": doc.metadata.get("page_num"),
-            "text": doc.page_content,
-        }
-        for doc in docs
-    ]
+    # 검색 순위 1등이 아니라, 실제로 생성된 답변과 단어가 가장 많이 겹치는 문서를
+    # "답변에 가장 큰 영향을 준 근거" 1건으로 고른다.
+    answer = "".join(answer_parts)
+    top_doc = max(docs, key=lambda d: _word_overlap(answer, d.page_content)) if docs else None
+    sources = (
+        [
+            {
+                "filename": top_doc.metadata.get("source"),
+                "page": top_doc.metadata.get("page_num"),
+                "text": _best_snippet(answer, top_doc.page_content),
+            }
+        ]
+        if top_doc
+        else []
+    )
     yield _sse({"sources": sources})
     yield "data: [DONE]\n\n"
 

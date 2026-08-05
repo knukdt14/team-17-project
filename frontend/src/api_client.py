@@ -1,15 +1,15 @@
 """
 api_client.py
 - model 서비스(/ask, /ingest 등) 호출 로직을 한 곳에 모아둔다.
-- UI 모듈(chat_page.py, admin_page.py 등)은 이 모듈의 함수만 호출하고 requests를 직접 쓰지 않는다.
-- 나중에 대화이력/피드백 저장 등이 model에 추가돼도 UI 쪽은 거의 안 건드리고
-  이 파일만 확장하면 되도록 창구를 하나로 모아둠.
+- UI 모듈(chat_page.py, admin_page.py 등)은 이 모듈의 함수만 호출하고 httpx를 직접 쓰지 않는다.
+- NiceGUI는 브라우저 연결 하나하나가 그대로 asyncio 코루틴이라, httpx.AsyncClient로 SSE를
+  스트리밍하면서 토큰이 도착할 때마다 on_token 콜백을 부르는 방식으로 짠다.
 """
 
 import json
 import os
 
-import requests
+import httpx
 
 MODEL_SERVICE_URL = os.environ.get("MODEL_SERVICE_URL", "http://model:8100")
 REQUEST_TIMEOUT = float(os.environ.get("MODEL_REQUEST_TIMEOUT", "120"))
@@ -19,82 +19,66 @@ class ModelServiceError(Exception):
     """model 호출 실패를 사용자에게 보여줄 메시지와 함께 감싸는 예외."""
 
 
-def ask_stream(question: str, history: list[dict] | None = None, sources_out: list | None = None):
-    """질문을 model의 /ask(SSE)로 보내고 토큰을 하나씩 yield하는 제너레이터.
-    st.write_stream()에 그대로 넘기면 토큰이 도착하는 대로 화면에 찍힌다.
-    history는 아직 model이 받지 않아도 무해하게 무시되므로(FastAPI/Pydantic 기본 동작이
-    정의 안 된 필드를 그냥 버림) 미리 실어 보내도 안전하다.
-
-    sources_out을 넘기면, 스트림 끝에 오는 근거 문서(sources) 이벤트를 토큰으로 yield하지
-    않고 이 리스트에 담아둔다. st.write_stream()은 텍스트만 다루므로 sources처럼 구조화된
-    데이터는 반환값이 아니라 이런 사이드 채널로 꺼내야 함.
+async def ask_stream(question: str, on_token, history: list[dict] | None = None) -> list[dict]:
+    """질문을 model의 /ask(SSE)로 보내고, 토큰이 도착할 때마다 on_token(token)을 호출한다.
+    history는 아직 model이 안 받아도 무해하게 무시되므로(Pydantic 기본 동작이 정의 안 된 필드를
+    그냥 버림) 미리 실어 보내도 안전하다. 스트림이 끝나면 근거 문서(sources) 리스트를 반환한다.
     """
     payload: dict = {"question": question}
     if history:
         payload["history"] = history
 
+    sources: list = []
     try:
-        with requests.post(
-            f"{MODEL_SERVICE_URL}/ask", json=payload, timeout=REQUEST_TIMEOUT, stream=True
-        ) as resp:
-            if resp.status_code == 429:
-                # 동시 요청이 몰려 model이 바쁠 때를 대비한 안내 (model이 아직 429를
-                # 내려주지 않아도 이 분기는 미리 준비해둔 것)
-                raise ModelServiceError("🚦 지금 다른 사용자의 답변을 생성하고 있어요. 잠시 후 다시 시도해주세요.")
-            resp.raise_for_status()
-            for line in resp.iter_lines(decode_unicode=True):
-                if not line or not line.startswith("data: "):
-                    continue
-                event_raw = line[len("data: ") :]
-                if event_raw == "[DONE]":
-                    break
-                event = json.loads(event_raw)
-                if "error" in event:
-                    raise ModelServiceError(f"❌ 죄송합니다, 답변을 가져오지 못했습니다. ({event['error']})")
-                if "sources" in event:
-                    if sources_out is not None:
-                        sources_out.extend(event["sources"])
-                    continue
-                yield event.get("token", "")
-    except requests.Timeout as e:
+        async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
+            async with client.stream("POST", f"{MODEL_SERVICE_URL}/ask", json=payload) as resp:
+                if resp.status_code == 429:
+                    # 동시 요청이 몰려 model이 바쁠 때를 대비한 안내 (model이 아직 429를
+                    # 내려주지 않아도 이 분기는 미리 준비해둔 것)
+                    raise ModelServiceError("🚦 지금 다른 사용자의 답변을 생성하고 있어요. 잠시 후 다시 시도해주세요.")
+                resp.raise_for_status()
+                async for line in resp.aiter_lines():
+                    if not line or not line.startswith("data: "):
+                        continue
+                    event_raw = line[len("data: ") :]
+                    if event_raw == "[DONE]":
+                        break
+                    event = json.loads(event_raw)
+                    if "error" in event:
+                        raise ModelServiceError(f"❌ 죄송합니다, 답변을 가져오지 못했습니다. ({event['error']})")
+                    if "sources" in event:
+                        sources.extend(event["sources"])
+                        continue
+                    token = event.get("token", "")
+                    if token:
+                        on_token(token)
+    except httpx.TimeoutException as e:
         raise ModelServiceError("⏱️ 죄송합니다, 응답 시간이 초과되었습니다. 잠시 후 다시 시도해주세요.") from e
-    except requests.ConnectionError as e:
+    except httpx.ConnectError as e:
         raise ModelServiceError("🔌 죄송합니다, 서버에 연결할 수 없습니다. 잠시 후 다시 시도해주세요.") from e
-    except requests.RequestException as e:
+    except ModelServiceError:
+        raise
+    except httpx.HTTPError as e:
         raise ModelServiceError(f"❌ 죄송합니다, 답변을 가져오지 못했습니다. ({e})") from e
 
+    return sources
 
-def upload_pdf(filename: str, content: bytes) -> dict:
+
+async def upload_pdf(filename: str, content: bytes) -> dict:
     """PDF를 model의 /ingest로 올려서 벡터DB에 반영한다."""
     try:
-        resp = requests.post(
-            f"{MODEL_SERVICE_URL}/ingest",
-            files={"file": (filename, content, "application/pdf")},
-            timeout=REQUEST_TIMEOUT,
-        )
-        resp.raise_for_status()
-        return resp.json()
-    except requests.Timeout as e:
+        async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
+            resp = await client.post(
+                f"{MODEL_SERVICE_URL}/ingest",
+                files={"file": (filename, content, "application/pdf")},
+            )
+            resp.raise_for_status()
+            return resp.json()
+    except httpx.TimeoutException as e:
         raise ModelServiceError(
             "⏱️ 업로드 요청이 시간 초과되었습니다. 파일 크기를 확인하거나 잠시 후 다시 시도해주세요."
         ) from e
-    except requests.ConnectionError as e:
+    except httpx.ConnectError as e:
         raise ModelServiceError("🔌 서버에 연결할 수 없습니다. 잠시 후 다시 시도해주세요.") from e
-    except requests.RequestException as e:
+    except httpx.HTTPError as e:
         raise ModelServiceError(f"❌ 업로드 실패: {e}") from e
-
-
-def send_feedback(question: str, answer: str, rating: str) -> None:
-    """답변 👍/👎 피드백을 model로 보낸다.
-    model에 /feedback 엔드포인트가 아직 없어서 실패해도 사용자에게 에러를 보여주지 않고
-    조용히 무시한다 (나중에 model이 엔드포인트를 추가하면 이 함수는 그대로 두고 자동으로
-    저장되기 시작함).
-    """
-    try:
-        requests.post(
-            f"{MODEL_SERVICE_URL}/feedback",
-            json={"question": question, "answer": answer, "rating": rating},
-            timeout=5,
-        )
-    except requests.RequestException:
-        pass

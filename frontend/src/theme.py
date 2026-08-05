@@ -1,181 +1,113 @@
 """
 theme.py
-- config.toml의 색상만으로는 버튼/카드/말풍선 모양, 여백까지 못 바꿔서 여기서 CSS를
-  한 번 더 주입한다. 전체 배경에 은은한 인디고 그라데이션을 깔고, Streamlit 기본 레이아웃의
-  과한 상단 여백을 줄이고, 카드/버튼에 그림자와 채도를 더 줘서 밋밋해 보이지 않게 한다.
-- data-testid 셀렉터를 우선 쓴다 (Streamlit 내부 class명보다 버전 변화에 덜 취약함).
-  다만 100% 안정 보장은 안 되므로, 셀렉터가 안 맞아도 앱 동작 자체는 깨지지 않는다
-  (그냥 스타일이 일부 안 먹는 정도).
+- 앱 전체 브랜드 컬러 / 헤더 / 좌측 네비게이션(드로어)을 한 곳에서 관리한다.
+- 경북대 데이터융복합연구원 사이트 톤(화이트 배경 + 레드 포인트 + 카드형 그리드)을 참고해서,
+  Streamlit 시절의 인디고 그라데이션 톤 대신 절제된 기관형 톤으로 바꿨다.
+  실제 KNU 로고 이미지는 쓸 수 없어서, 로고 대신 레드 마크 + 텍스트 워드마크로 그 느낌만 가져온다.
+- frame()이 모든 페이지 공통 뼈대(헤더+드로어)를 그리고, 각 페이지는 그 아래 본문만 채우면 된다.
 """
 
-import streamlit as st
+from nicegui import app, ui
 
-_CSS = """
-<style>
-@import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css');
+from auth import is_admin, render_login_widget
 
-:root {
-    --accent: #6366F1;
-    --accent-2: #8B5CF6;
-    --accent-soft: #EEF0FE;
-    --border-soft: #E5E3FA;
-    --text-muted: #6B7280;
-}
+ACCENT = "#C8102E"
+ACCENT_SOFT = "#C8102E14"
+INK = "#1F2937"
+MUTED = "#6B7280"
+BORDER = "#E5E7EB"
+BG = "#FAFAFA"
 
-html, body, [data-testid="stAppViewContainer"], [class*="css"] {
-    font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
-}
-
-/* 전체 배경 - 순백 대신 은은한 인디고 그라데이션 */
-[data-testid="stAppViewContainer"] {
-    background: linear-gradient(180deg, #F3F1FF 0%, #FAFAFF 45%, #FFFFFF 100%) !important;
-    background-attachment: fixed !important;
-}
-
-/* 상단 고정 툴바가 흰색이라 그라데이션과 이질감이 생기는 걸 방지 - 투명하게 */
-[data-testid="stHeader"] {
-    background: transparent !important;
-}
-
-/* Streamlit 기본 상단 여백이 과해서 "휑해 보이는" 원인 중 하나 - 줄이되,
-   상단 고정 툴바(Deploy 메뉴 바)에 콘텐츠가 가려지지 않도록 최소 여백은 남긴다. */
-.block-container {
-    padding-top: 3.5rem !important;
-    padding-bottom: 3rem !important;
-    max-width: 780px !important;
-}
-[data-testid="stSidebar"] .block-container {
-    padding-top: 1.5rem !important;
-}
-
-h1, h2, h3 {
-    font-weight: 800 !important;
-    letter-spacing: -0.02em !important;
-}
-h3 {
-    color: var(--accent) !important;
-    font-size: 1.05rem !important;
-    border-bottom: 2px solid var(--accent-soft);
-    padding-bottom: 0.35rem;
-    margin-top: 1.4rem !important;
-}
-
-[data-testid="stCaptionContainer"], .stCaption {
-    color: var(--text-muted) !important;
-}
-
-/* 버튼: 카드 스타일 + 살짝 뜨는 호버 */
-[data-testid="stButton"] button,
-[data-testid="stLinkButton"] a {
-    border-radius: 14px !important;
-    border: 1.5px solid var(--border-soft) !important;
-    background: #FFFFFF !important;
-    color: #1F2333 !important;
-    font-weight: 700 !important;
-    padding: 0.6rem 1rem !important;
-    box-shadow: 0 2px 6px rgba(99, 102, 241, 0.06) !important;
-    transition: all 0.15s ease !important;
-}
-[data-testid="stButton"] button:hover,
-[data-testid="stLinkButton"] a:hover {
-    border-color: var(--accent) !important;
-    color: var(--accent) !important;
-    box-shadow: 0 8px 20px rgba(99, 102, 241, 0.18) !important;
-    transform: translateY(-2px);
-}
-[data-testid="stButton"] button:active {
-    transform: translateY(0px);
-}
-
-/* primary 버튼(카드 CTA 등) - 그라데이션 채움 */
-[data-testid="stButton"] button[kind="primary"] {
-    background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%) !important;
-    border: none !important;
-    color: #FFFFFF !important;
-    box-shadow: 0 6px 16px rgba(99, 102, 241, 0.28) !important;
-}
-[data-testid="stButton"] button[kind="primary"]:hover {
-    color: #FFFFFF !important;
-    box-shadow: 0 10px 22px rgba(99, 102, 241, 0.36) !important;
-    transform: translateY(-2px);
-}
-
-/* 기수 선택 카드 (st.container(border=True)) */
-[data-testid="stVerticalBlockBorderWrapper"] {
-    border-radius: 20px !important;
-    border: 1.5px solid var(--border-soft) !important;
-    background: #FFFFFF !important;
-    box-shadow: 0 4px 14px rgba(99, 102, 241, 0.07) !important;
-    transition: all 0.18s ease !important;
-}
-[data-testid="stVerticalBlockBorderWrapper"]:hover {
-    border-color: var(--accent) !important;
-    box-shadow: 0 12px 26px rgba(99, 102, 241, 0.16) !important;
-    transform: translateY(-2px);
-}
-
-/* 채팅 말풍선 - 카드처럼 테두리/그림자를 줘서 배경과 분리 */
-[data-testid="stChatMessage"] {
-    border-radius: 18px !important;
-    border: 1px solid var(--border-soft) !important;
-    background: #FFFFFF !important;
-    box-shadow: 0 2px 10px rgba(99, 102, 241, 0.06) !important;
-    padding: 0.9rem 1.1rem !important;
-    margin-bottom: 0.7rem !important;
-}
-
-/* 출처 카드 / expander */
-[data-testid="stExpander"] {
-    border-radius: 14px !important;
-    border: 1px solid var(--border-soft) !important;
-    background: var(--accent-soft) !important;
-    overflow: hidden;
-}
-
-/* 알림 박스 */
-[data-testid="stAlert"] {
-    border-radius: 14px !important;
-}
-
-/* 입력 필드 */
-input, textarea, [data-testid="stChatInput"] textarea {
-    border-radius: 12px !important;
-}
-
-/* 사이드바 */
-[data-testid="stSidebar"] {
-    background: #F6F5FF !important;
-    border-right: 1px solid #ECEAFB !important;
-}
-</style>
-"""
+NAV_ITEMS = [
+    ("💬", "챗봇", "/chat"),
+    ("📅", "일정", "/schedule"),
+    ("📍", "오시는길", "/map"),
+    ("👩‍🏫", "교수진", "/faculty"),
+]
 
 
-def inject_custom_css():
-    st.markdown(_CSS, unsafe_allow_html=True)
+def apply_global_style():
+    ui.colors(primary=ACCENT, secondary=INK)
+    ui.add_head_html(
+        f"""
+        <style>
+          body {{ background: {BG} !important; }}
+          .q-card {{
+            border-radius: 14px !important;
+            border: 1px solid {BORDER} !important;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.04) !important;
+          }}
+          .q-menu {{ border-radius: 12px !important; }}
+          .q-message-text--sent, .q-message-text--sent > div {{
+            background: {ACCENT} !important; color: #fff !important;
+          }}
+          .q-message-text--received, .q-message-text--received > div {{
+            background: #F3F4F6 !important; color: {INK} !important;
+          }}
+          .q-message-name {{ color: {MUTED} !important; font-weight: 600 !important; font-size: 0.75rem !important; }}
+        </style>
+        """
+    )
+
+
+def _clear_cohort():
+    # 기수를 바꾸면 이전 기수에서 나눴던 대화가 새 기수 화면에 그대로 남아있으면 안 되니
+    # 같이 비운다.
+    app.storage.user["selected_cohort"] = None
+    app.storage.user["chat_messages"] = []
+
+
+def _brand_mark():
+    with ui.row().classes("items-center gap-3"):
+        ui.element("div").classes("w-2.5 h-8 rounded-sm").style(f"background:{ACCENT};")
+        with ui.column().classes("gap-0"):
+            ui.label("KDT AI·빅데이터").classes("font-extrabold text-base leading-tight").style(f"color:{INK};")
+            ui.label("경북대학교 데이터융복합연구원").classes("text-[11px] leading-tight").style(f"color:{MUTED};")
+
+
+def frame(current_path: str = ""):
+    """헤더(브랜드+로그인) + 기수 선택 후에만 보이는 좌측 네비게이션 드로어를 그린다."""
+    apply_global_style()
+    cohort = app.storage.user.get("selected_cohort")
+
+    with ui.header().classes("items-center justify-between bg-white px-6 py-3").style(
+        f"border-bottom: 3px solid {ACCENT};"
+    ):
+        _brand_mark()
+        render_login_widget()
+
+    if cohort:
+        with ui.left_drawer().classes("bg-white").style(f"border-right: 1px solid {BORDER};"):
+            ui.label(cohort).classes("font-extrabold text-lg mt-1").style(f"color:{INK};")
+            ui.label("선택된 기수").classes("text-xs mb-4").style(f"color:{MUTED};")
+
+            def _nav_link(icon: str, label: str, path: str):
+                active = path == current_path
+                link = ui.link(f"{icon}  {label}", path).classes(
+                    "flex items-center gap-2 py-2 px-3 rounded-lg no-underline mb-1"
+                    + (" font-bold" if active else "")
+                )
+                link.style(f"background:{ACCENT_SOFT}; color:{ACCENT};" if active else f"color:{INK};")
+
+            for icon, label, path in NAV_ITEMS:
+                _nav_link(icon, label, path)
+            if is_admin():
+                _nav_link("🛠️", "관리자", "/admin")
+
+            ui.separator().classes("my-3")
+            ui.button(
+                "기수 변경",
+                on_click=lambda: (_clear_cohort(), ui.navigate.to("/")),
+            ).props("flat").classes("w-full").style(f"color:{MUTED};")
 
 
 def page_header(icon: str, title: str, subtitle: str = ""):
-    """st.title()+st.caption() 대신 쓰는 아이콘 뱃지형 헤더. 모든 탭에서 통일된 톤을 준다."""
-    sub_html = (
-        f"<p style='color:#6B7280;margin:0.2rem 0 0;font-size:0.92rem;'>{subtitle}</p>"
-        if subtitle
-        else ""
-    )
-    st.markdown(
-        f"""
-        <div style="display:flex;align-items:center;gap:0.9rem;margin-bottom:1.5rem;">
-          <div style="width:52px;height:52px;min-width:52px;border-radius:16px;
-                      background:linear-gradient(135deg,#EEF0FE,#E0E7FF);
-                      display:flex;align-items:center;justify-content:center;
-                      font-size:1.6rem;box-shadow:0 2px 8px rgba(99,102,241,0.15);">
-            {icon}
-          </div>
-          <div>
-            <div style="font-size:1.55rem;font-weight:800;letter-spacing:-0.02em;color:#1F2333;">{title}</div>
-            {sub_html}
-          </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    with ui.row().classes("items-center gap-3 mb-6"):
+        with ui.element("div").classes(
+            "w-12 h-12 min-w-[3rem] rounded-xl flex items-center justify-center text-xl"
+        ).style(f"background:{ACCENT_SOFT};"):
+            ui.label(icon)
+        with ui.column().classes("gap-0"):
+            ui.label(title).classes("text-2xl font-extrabold").style(f"color:{INK};")
+            if subtitle:
+                ui.label(subtitle).classes("text-sm").style(f"color:{MUTED};")
