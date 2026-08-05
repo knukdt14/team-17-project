@@ -21,6 +21,7 @@ services:
 
   frontend:
     build: ./frontend
+    env_file: .env
     environment:
       MODEL_SERVICE_URL: http://model:8100
     depends_on:
