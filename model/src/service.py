@@ -5,6 +5,7 @@ service.py
 - 서버 시작 시(lifespan) PDF 로딩 + 벡터스토어 준비 + LLM 체인 구성을 한 번만 수행한다.
 """
 
+import os
 import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -17,15 +18,17 @@ from chunker import chunk_pages
 from retriever import get_or_build_store, get_retriever, get_hybrid_retriever, chunks_to_documents
 from rag_chain import get_rag_chain
 
-DATA_DIR = "/app/data/raw"
-VECTORSTORE_DIR = "/app/vectorstore"  # docker-compose가 볼륨을 마운트해서 재빌드 없이 재사용
-UPLOAD_DIR = Path("/app/uploads")
+# 도커 컨테이너 기준 기본 경로. 로컬(비도커)에서 테스트할 때는 DATA_DIR/VECTORSTORE_DIR/UPLOAD_DIR
+# 환경변수로 리포지토리 루트 기준 상대경로를 넘겨서 오버라이드한다.
+DATA_DIR = os.environ.get("DATA_DIR", "/app/data/raw")
+VECTORSTORE_DIR = os.environ.get("VECTORSTORE_DIR", "/app/vectorstore")  # docker-compose가 볼륨을 마운트해서 재빌드 없이 재사용
+UPLOAD_DIR = Path(os.environ.get("UPLOAD_DIR", "/app/uploads"))
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 # 벡터DB 백엔드 / 임베딩 모델 / LLM / 프롬프트 조합 - 최종 확정된 조합을 여기에 반영
 VECTORSTORE_BACKEND = "faiss"
 EMBEDDING_MODEL_KEY = "bge_m3"
-LLM_KEY = "groq_llama"
+LLM_KEY = "hf_local"
 PROMPT_STYLE = "service"
 USE_HYBRID_RETRIEVAL = True
 TOP_K = 5

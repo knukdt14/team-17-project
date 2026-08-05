@@ -71,7 +71,7 @@ docker compose up --build
 | 임베딩 | bge_m3 |
 | 벡터DB | FAISS |
 | 검색 | 하이브리드 (dense + BM25) |
-| LLM | Groq Llama-3.3-70B |
+| LLM | 로컬 Qwen2.5-7B-Instruct (4bit 양자화, GPU) |
 | 프롬프트 | service(간결한 AI 어시스턴트 톤) |
 
 ## 협업 방식 (Git/GitHub)

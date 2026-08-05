@@ -1,0 +1,2 @@
+﻿실험,임베딩,벡터DB,LLM,프롬프트,평균_BERTScore_F1,평균_LLM평가점수,환각테스트_통과
+faiss_bge_m3_hf_local_service,bge_m3,faiss,hf_local,service,0.6857818305492401,4.6,False

@@ -20,6 +20,11 @@ faiss-cpu>=1.8.0
 rank_bm25>=0.2.2                   # BM25 키워드 검색 (하이브리드 검색용)
 sentence-transformers>=3.0.0       # HuggingFaceEmbeddings 백엔드
 
+# ===== 로컬 LLM (Qwen2.5-7B-Instruct, 4bit 양자화) =====
+transformers>=4.46.0
+accelerate>=0.34.0
+bitsandbytes>=0.43.0
+
 # ===== PDF 읽기 + OCR =====
 PyMuPDF>=1.24.0                    # fitz
 pytesseract>=0.3.10                # tesseract 엔진은 Dockerfile에서 apt로 설치

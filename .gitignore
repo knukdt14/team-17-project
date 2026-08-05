@@ -3,6 +3,7 @@ __pycache__/
 *.pyc
 .venv/
 venv/
+*.log
 
 # 로컬에서 서비스 없이 직접 실행할 때 생기는 벡터DB/업로드 캐시
 model/vectorstore/
