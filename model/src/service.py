@@ -18,7 +18,13 @@ from pydantic import BaseModel
 
 from loader import load_pdf, load_pdf_directory
 from chunker import chunk_pages
-from retriever import get_or_build_store, get_retriever, get_hybrid_retriever, chunks_to_documents
+from retriever import (
+    get_or_build_store,
+    get_retriever,
+    get_hybrid_retriever,
+    chunks_to_documents,
+    persist_store,
+)
 from rag_chain import get_rag_chain
 
 # 도커 컨테이너 기준 기본 경로. 로컬(비도커)에서 테스트할 때는 DATA_DIR/VECTORSTORE_DIR/UPLOAD_DIR
@@ -53,7 +59,10 @@ def _build_retriever():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     print("[model] 문서 로드 및 벡터스토어 준비 중...")
-    pages = load_pdf_directory(DATA_DIR)
+    # data/raw(기본 규정 PDF) + uploads(관리자가 이전에 올려서 반영한 PDF)를 같이 로드해야
+    # 재시작 후에도 업로드했던 PDF가 BM25 코퍼스(state["chunks"])에 그대로 남아있음.
+    # 벡터DB(FAISS)는 persist_store()로 디스크에 저장해두므로 여기서는 캐시를 그대로 재사용함.
+    pages = load_pdf_directory(DATA_DIR) + load_pdf_directory(str(UPLOAD_DIR))
     chunks = chunk_pages(pages)
     state["chunks"] = chunks
     state["vectorstore"] = get_or_build_store(
@@ -132,6 +141,9 @@ def ingest(file: UploadFile = File(...)):
 
     with gpu_lock:
         state["vectorstore"].add_documents(chunks_to_documents(new_chunks))
+        # FAISS는 add_documents만으로는 디스크 캐시에 반영이 안 돼서, 명시적으로 저장해야
+        # 컨테이너를 재시작해도 방금 추가한 PDF가 검색에 그대로 남아있음.
+        persist_store(state["vectorstore"], VECTORSTORE_BACKEND, EMBEDDING_MODEL_KEY, base_dir=VECTORSTORE_DIR)
         state["chunks"].extend(new_chunks)
         state["retriever"] = _build_retriever()
         state["chain"] = get_rag_chain(state["retriever"], llm_key=LLM_KEY, prompt_style=PROMPT_STYLE)

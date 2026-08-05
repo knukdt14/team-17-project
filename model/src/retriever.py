@@ -131,6 +131,15 @@ def get_or_build_store(
         return build_faiss(model_key, chunks, base_dir, embedding_device=embedding_device)
 
 
+def persist_store(vectorstore, backend: Literal["chroma", "faiss"], model_key: str, base_dir: str = "."):
+    """add_documents()로 벡터DB에 문서를 추가한 뒤 디스크 캐시에도 반영한다.
+    FAISS는 save_local()을 명시적으로 불러야 디스크에 반영됨(안 하면 컨테이너 재시작 시
+    add_documents로 추가한 내용이 캐시에서 사라짐). Chroma는 클라이언트가 쓰기 시점마다
+    자동으로 persist_directory에 반영하므로 별도 호출이 필요 없음."""
+    if backend == "faiss":
+        vectorstore.save_local(_db_dir("faiss", model_key, base_dir))
+
+
 def get_retriever(vectorstore, search_type: str = "similarity", k: int = 5):
     return vectorstore.as_retriever(search_type=search_type, search_kwargs={"k": k})
 
