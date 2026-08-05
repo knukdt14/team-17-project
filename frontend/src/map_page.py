@@ -90,50 +90,65 @@ def map_page():
           (function() {{
             var keyword = {json.dumps(keyword)};
             var fullAddress = {json.dumps(location)};
-            var container = document.getElementById('kdt-map');
-            if (!container) return;
 
-            function showError(msg) {{
+            function showError(container, msg) {{
               container.innerHTML = "<p style='padding:16px;color:#c0392b;font-size:0.85rem;'>" + msg + "</p>";
             }}
 
-            if (typeof kakao === 'undefined' || !kakao.maps) {{
-              showError("카카오맵 SDK를 불러오지 못했습니다. Kakao Developers 콘솔에 이 사이트 도메인이 등록되어 있는지 확인해주세요. 길찾기 버튼으로 이용해주세요.");
-              return;
+            // #kdt-map은 NiceGUI가 클라이언트에서 Vue로 그리는 DOM이라, 이 스크립트가
+            // 실행되는 시점엔 아직 화면에 존재하지 않을 수 있다. 생길 때까지 잠깐씩 재시도한다.
+            function waitForContainer(retriesLeft) {{
+              var container = document.getElementById('kdt-map');
+              if (!container) {{
+                if (retriesLeft > 0) {{
+                  setTimeout(function() {{ waitForContainer(retriesLeft - 1); }}, 100);
+                }}
+                return;
+              }}
+              initMap(container);
             }}
 
-            try {{
-              var center = new kakao.maps.LatLng(35.8714, 128.6014);
-              var map = new kakao.maps.Map(container, {{ center: center, level: 4 }});
-
-              function placeMarker(y, x, label) {{
-                var coords = new kakao.maps.LatLng(y, x);
-                new kakao.maps.Marker({{ map: map, position: coords }});
-                map.setCenter(coords);
-                var link = document.getElementById('kdt-route-link');
-                if (link) {{
-                  link.href = "https://map.kakao.com/link/to/" + encodeURIComponent(label) + "," + y + "," + x;
-                }}
+            function initMap(container) {{
+              if (typeof kakao === 'undefined' || !kakao.maps) {{
+                showError(container, "카카오맵 SDK를 불러오지 못했습니다. Kakao Developers 콘솔에 이 사이트 도메인이 등록되어 있는지 확인해주세요. 길찾기 버튼으로 이용해주세요.");
+                return;
               }}
 
-              var places = new kakao.maps.services.Places();
-              places.keywordSearch(keyword, function(data, status) {{
-                if (status === kakao.maps.services.Status.OK && data.length > 0) {{
-                  placeMarker(data[0].y, data[0].x, keyword);
-                  return;
-                }}
-                var geocoder = new kakao.maps.services.Geocoder();
-                geocoder.addressSearch(fullAddress, function(result, gStatus) {{
-                  if (gStatus === kakao.maps.services.Status.OK) {{
-                    placeMarker(result[0].y, result[0].x, fullAddress);
-                  }} else {{
-                    showError("지도를 표시할 수 없습니다 (장소를 찾지 못했어요). 길찾기 버튼으로 검색해주세요.");
+              try {{
+                var center = new kakao.maps.LatLng(35.8714, 128.6014);
+                var map = new kakao.maps.Map(container, {{ center: center, level: 4 }});
+
+                function placeMarker(y, x, label) {{
+                  var coords = new kakao.maps.LatLng(y, x);
+                  new kakao.maps.Marker({{ map: map, position: coords }});
+                  map.setCenter(coords);
+                  var link = document.getElementById('kdt-route-link');
+                  if (link) {{
+                    link.href = "https://map.kakao.com/link/to/" + encodeURIComponent(label) + "," + y + "," + x;
                   }}
-                }});
-              }}, {{ location: center, radius: 20000 }});
-            }} catch (err) {{
-              showError("지도를 불러오는 중 오류가 발생했습니다 (" + err.message + "). 길찾기 버튼으로 이용해주세요.");
+                }}
+
+                var places = new kakao.maps.services.Places();
+                places.keywordSearch(keyword, function(data, status) {{
+                  if (status === kakao.maps.services.Status.OK && data.length > 0) {{
+                    placeMarker(data[0].y, data[0].x, keyword);
+                    return;
+                  }}
+                  var geocoder = new kakao.maps.services.Geocoder();
+                  geocoder.addressSearch(fullAddress, function(result, gStatus) {{
+                    if (gStatus === kakao.maps.services.Status.OK) {{
+                      placeMarker(result[0].y, result[0].x, fullAddress);
+                    }} else {{
+                      showError(container, "지도를 표시할 수 없습니다 (장소를 찾지 못했어요). 길찾기 버튼으로 검색해주세요.");
+                    }}
+                  }});
+                }}, {{ location: center, radius: 20000 }});
+              }} catch (err) {{
+                showError(container, "지도를 불러오는 중 오류가 발생했습니다 (" + err.message + "). 길찾기 버튼으로 이용해주세요.");
+              }}
             }}
+
+            waitForContainer(50);
           }})();
         </script>
         """
