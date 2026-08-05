@@ -2,10 +2,14 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# PyMuPDF(OCR 폴백)에 필요한 tesseract 엔진 (한국어 포함)
+# PyMuPDF(OCR 폴백)에 필요한 tesseract 엔진 (한국어 포함) +
+# triton(torch가 리눅스에서만 끌어오는 의존성)이 일부 커널을 JIT 컴파일할 때 필요한 C 컴파일러.
+# 이게 없으면 로컬 LLM 스트리밍 생성 스레드가 "Failed to find C compiler"로 조용히 죽고,
+# 메인 스레드는 TextIteratorStreamer 60초 타임아웃까지 아무 응답 없이 멈춰있게 됨.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         tesseract-ocr \
         tesseract-ocr-kor \
+        build-essential \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .

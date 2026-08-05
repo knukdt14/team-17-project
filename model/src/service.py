@@ -5,12 +5,14 @@ service.py
 - 서버 시작 시(lifespan) PDF 로딩 + 벡터스토어 준비 + LLM 체인 구성을 한 번만 수행한다.
 """
 
+import json
 import os
 import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from loader import load_pdf, load_pdf_directory
@@ -28,6 +30,10 @@ UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 # 벡터DB 백엔드 / 임베딩 모델 / LLM / 프롬프트 조합 - 최종 확정된 조합을 여기에 반영
 VECTORSTORE_BACKEND = "faiss"
 EMBEDDING_MODEL_KEY = "bge_m3"
+# bge_m3(약 2GB)를 LLM과 같은 GPU에 같이 올리면 8GB급 GPU에서 VRAM이 빠듯해져 로컬 LLM
+# 스트리밍(TextIteratorStreamer 60초 타임아웃)이 실패하는 걸 확인함. 질문 1건 임베딩은 CPU로도
+# 충분히 빠르므로 CPU로 분리해서 GPU를 전부 LLM에 준다.
+EMBEDDING_DEVICE = "cpu"
 LLM_KEY = "hf_local"
 PROMPT_STYLE = "service"
 USE_HYBRID_RETRIEVAL = True
@@ -50,7 +56,11 @@ async def lifespan(app: FastAPI):
     chunks = chunk_pages(pages)
     state["chunks"] = chunks
     state["vectorstore"] = get_or_build_store(
-        VECTORSTORE_BACKEND, EMBEDDING_MODEL_KEY, chunks, base_dir=VECTORSTORE_DIR
+        VECTORSTORE_BACKEND,
+        EMBEDDING_MODEL_KEY,
+        chunks,
+        base_dir=VECTORSTORE_DIR,
+        embedding_device=EMBEDDING_DEVICE,
     )
     state["retriever"] = _build_retriever()
     state["chain"] = get_rag_chain(state["retriever"], llm_key=LLM_KEY, prompt_style=PROMPT_STYLE)
@@ -66,10 +76,6 @@ class AskRequest(BaseModel):
     question: str
 
 
-class AskResponse(BaseModel):
-    answer: str
-
-
 class IngestResponse(BaseModel):
     message: str
     filename: str
@@ -81,16 +87,26 @@ def health():
     return {"status": "ok"}
 
 
-@app.post("/ask", response_model=AskResponse)
+def _sse(data: dict) -> str:
+    return f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+
+def _stream_answer(question: str):
+    """RAG 체인을 토큰 단위로 스트리밍하며 SSE 이벤트로 흘려보낸다.
+    generate가 끝나기 전에 다음 요청이 GPU를 밟지 않도록, 스트림 소비가 끝날 때까지 gpu_lock을 쥔다."""
+    with gpu_lock:
+        for token in state["chain"].stream(question):
+            yield _sse({"token": token})
+    yield "data: [DONE]\n\n"
+
+
+@app.post("/ask")
 def ask(req: AskRequest):
-    """질문을 받아 RAG 체인을 호출하고 답변을 반환한다."""
+    """질문을 받아 RAG 체인 답변을 SSE(text/event-stream)로 토큰 단위 스트리밍한다."""
     if not req.question.strip():
         raise HTTPException(status_code=400, detail="질문을 입력하세요.")
 
-    with gpu_lock:
-        answer = state["chain"].invoke(req.question)
-
-    return AskResponse(answer=answer)
+    return StreamingResponse(_stream_answer(req.question), media_type="text/event-stream")
 
 
 @app.post("/ingest", response_model=IngestResponse)
