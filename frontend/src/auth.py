@@ -22,23 +22,29 @@ def is_admin() -> bool:
 
 
 def render_login_widget():
-    """사이드바에 로그인/로그아웃 UI를 그린다. app.py 진입 시 한 번 호출하면 된다."""
-    with st.sidebar:
-        st.divider()
-        if is_admin():
-            st.success("🔑 관리자로 로그인됨")
-            if st.button("로그아웃", use_container_width=True):
+    """작은 로그인 버튼(팝오버) 하나를 그 자리에 그린다. 배치(사이드바/상단바 등)는
+    호출하는 쪽(theme.render_topbar)이 결정하고, 이 함수는 로그인 로직/내용에만 집중한다."""
+    if is_admin():
+        with st.popover("🔑", use_container_width=True):
+            st.caption("관리자로 로그인됨")
+            if st.button("로그아웃", use_container_width=True, key="admin_logout_btn"):
                 st.session_state[_SESSION_KEY] = False
                 st.rerun()
-        else:
-            with st.expander("🔒 관리자 로그인"):
-                pw = st.text_input("비밀번호", type="password", key="admin_pw_input")
-                if st.button("로그인", use_container_width=True):
-                    if pw and pw == _admin_password():
-                        st.session_state[_SESSION_KEY] = True
-                        st.rerun()
-                    else:
-                        st.error("비밀번호가 올바르지 않습니다.")
-
-        if _admin_password() == _DEFAULT_ADMIN_PASSWORD:
-            st.caption("⚠️ ADMIN_PASSWORD 환경변수 미설정 — 기본 비밀번호(changeme) 사용 중")
+    else:
+        with st.popover("🔒", use_container_width=True):
+            st.caption("관리자 로그인")
+            pw = st.text_input(
+                "비밀번호",
+                type="password",
+                key="admin_pw_input",
+                label_visibility="collapsed",
+                placeholder="비밀번호",
+            )
+            if st.button("로그인", use_container_width=True, key="admin_login_btn"):
+                if pw and pw == _admin_password():
+                    st.session_state[_SESSION_KEY] = True
+                    st.rerun()
+                else:
+                    st.error("비밀번호가 올바르지 않습니다.")
+            if _admin_password() == _DEFAULT_ADMIN_PASSWORD:
+                st.caption("⚠️ ADMIN_PASSWORD 환경변수 미설정 — 기본값 사용 중")

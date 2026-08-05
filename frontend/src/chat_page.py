@@ -18,6 +18,9 @@ FAQ_QUESTIONS = [
     "훈련장려금은 어떻게 지급되나요?",
 ]
 
+# 기본 로봇/사람 이모지 대신 브랜드 톤(🎓)에 맞춘 아바타로 통일한다.
+AVATARS = {"user": "🙂", "assistant": "🎓"}
+
 
 def _render_feedback(idx: int, message: dict):
     """답변 아래 👍/👎 버튼. 누르면 model로 피드백을 보낸다 (model에 엔드포인트가
@@ -38,10 +41,10 @@ def _ask(question: str):
     FAQ 버튼을 클릭한 경우가 완전히 동일하게 동작하도록 이 함수 하나로 모은다.
     """
     st.session_state.messages.append({"role": "user", "content": question})
-    with st.chat_message("user"):
+    with st.chat_message("user", avatar=AVATARS["user"]):
         st.markdown(question)
 
-    with st.chat_message("assistant"):
+    with st.chat_message("assistant", avatar=AVATARS["assistant"]):
         spinner_text = (
             "🧠 모델을 처음 준비하는 중이에요. 첫 응답은 조금 더 걸릴 수 있어요..."
             if not st.session_state.asked_once
@@ -87,7 +90,7 @@ def render():
         st.session_state.asked_once = False
 
     for idx, message in enumerate(st.session_state.messages):
-        with st.chat_message(message["role"]):
+        with st.chat_message(message["role"], avatar=AVATARS.get(message["role"])):
             if message.get("is_error"):
                 st.error(message["content"])
             else:

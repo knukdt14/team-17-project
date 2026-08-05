@@ -147,12 +147,42 @@ input, textarea, [data-testid="stChatInput"] textarea {
     background: #F6F5FF !important;
     border-right: 1px solid #ECEAFB !important;
 }
+
+/* 로딩 스피너 - 기본 회색 대신 브랜드 컬러로, 답변 대기 중이라는 느낌을 통일감 있게 */
+[data-testid="stSpinner"] > div {
+    border-top-color: var(--accent) !important;
+}
+[data-testid="stSpinner"] p {
+    color: var(--accent) !important;
+    font-weight: 600 !important;
+}
 </style>
 """
 
 
 def inject_custom_css():
     st.markdown(_CSS, unsafe_allow_html=True)
+
+
+def render_topbar(right_renderer):
+    """좌측 브랜드 마크 + 우측 위젯(관리자 로그인 등)을 한 줄에 배치하는 상단바.
+    사이드바에는 "현재 기수/메뉴"만 남기고, 로그인처럼 자주 안 쓰는 기능은 눈에 덜 띄게
+    상단 구석으로 뺀다."""
+    left, right = st.columns([6, 1])
+    with left:
+        st.markdown(
+            """
+            <div style="display:flex;align-items:center;gap:0.5rem;padding-top:0.35rem;">
+              <span style="font-size:1.3rem;">🎓</span>
+              <span style="font-weight:800;font-size:1.05rem;color:#1F2333;letter-spacing:-0.01em;">
+                KDT 규정집 챗봇
+              </span>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    with right:
+        right_renderer()
 
 
 def page_header(icon: str, title: str, subtitle: str = ""):

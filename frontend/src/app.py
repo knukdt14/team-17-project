@@ -15,7 +15,7 @@ import map_page
 import schedule_page
 from auth import is_admin, render_login_widget
 from cohorts import COHORT_LIST, get_cohort
-from theme import inject_custom_css
+from theme import inject_custom_css, render_topbar
 
 st.set_page_config(
     page_title="KDT 규정집 챗봇",
@@ -25,7 +25,7 @@ st.set_page_config(
 )
 
 inject_custom_css()
-render_login_widget()
+render_topbar(render_login_widget)
 
 if "selected_cohort" not in st.session_state:
     st.session_state.selected_cohort = None

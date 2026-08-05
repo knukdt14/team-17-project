@@ -8,7 +8,9 @@ map_page.py
 - KAKAO_JS_KEY가 없으면 지도 없이 딥링크 버튼만 보여준다.
 """
 
+import json
 import os
+import re
 from urllib.parse import quote
 
 import streamlit as st
@@ -18,6 +20,17 @@ from cohorts import get_main_location
 from theme import page_header
 
 KAKAO_JS_KEY = os.environ.get("KAKAO_JS_KEY", "")
+
+# Kakao Geocoder(주소 검색)는 도로명/지번 주소만 인식해서 "5층 교육장"처럼 건물명 뒤에
+# 층/호실이 붙은 우리 데이터는 검색이 거의 실패한다. 대신 장소(POI) 검색인
+# Places.keywordSearch를 쓰되, 검색어에서 층/교육장 표기를 빼고 건물명만 넘겨야
+# 실제 POI와 매칭될 확률이 높다.
+_SUFFIX_RE = re.compile(r"\s*(?:\d+층\s*)?교육장(?:\s*\d+(?:,\s*\d+)*)?\s*$|\s*\d+층\s*$")
+
+
+def _place_keyword(location: str) -> str:
+    simplified = _SUFFIX_RE.sub("", location).strip()
+    return simplified or location
 
 
 def render():
@@ -38,6 +51,8 @@ def render():
         st.link_button("🚗 카카오맵으로 길찾기", search_link, use_container_width=True)
         return
 
+    keyword = _place_keyword(location)
+
     html = f"""
     <div id="map" style="width:100%;height:400px;border-radius:8px;"></div>
     <div style="margin-top:12px;">
@@ -49,25 +64,41 @@ def render():
     </div>
     <script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey={KAKAO_JS_KEY}&libraries=services"></script>
     <script>
-      var address = "{location}";
+      var keyword = {json.dumps(keyword)};
+      var fullAddress = {json.dumps(location)};
       var container = document.getElementById('map');
-      var map = new kakao.maps.Map(container, {{
-        center: new kakao.maps.LatLng(35.8714, 128.6014),
-        level: 4
-      }});
-      var geocoder = new kakao.maps.services.Geocoder();
-      geocoder.addressSearch(address, function(result, status) {{
-        if (status === kakao.maps.services.Status.OK) {{
-          var coords = new kakao.maps.LatLng(result[0].y, result[0].x);
-          new kakao.maps.Marker({{ map: map, position: coords }});
-          map.setCenter(coords);
-          document.getElementById('route-link').href =
-            "https://map.kakao.com/link/to/" + encodeURIComponent(address) + "," + result[0].y + "," + result[0].x;
-        }} else {{
-          container.innerHTML =
-            "<p style='padding:16px;color:#666;'>지도를 표시할 수 없습니다 (주소 검색 실패). 길찾기 버튼으로 검색해주세요.</p>";
+      var center = new kakao.maps.LatLng(35.8714, 128.6014);
+      var map = new kakao.maps.Map(container, {{ center: center, level: 4 }});
+
+      function showError(msg) {{
+        container.innerHTML = "<p style='padding:16px;color:#666;'>" + msg + "</p>";
+      }}
+
+      function placeMarker(y, x, label) {{
+        var coords = new kakao.maps.LatLng(y, x);
+        new kakao.maps.Marker({{ map: map, position: coords }});
+        map.setCenter(coords);
+        document.getElementById('route-link').href =
+          "https://map.kakao.com/link/to/" + encodeURIComponent(label) + "," + y + "," + x;
+      }}
+
+      // 1) 건물명(장소/POI) 검색을 먼저 시도 - "교육장/층" 같은 표기가 있는 우리 데이터엔 이쪽이 더 잘 맞음.
+      var places = new kakao.maps.services.Places();
+      places.keywordSearch(keyword, function(data, status) {{
+        if (status === kakao.maps.services.Status.OK && data.length > 0) {{
+          placeMarker(data[0].y, data[0].x, keyword);
+          return;
         }}
-      }});
+        // 2) 장소 검색이 실패하면 원본 전체 문자열로 도로명/지번 주소 검색을 한 번 더 시도.
+        var geocoder = new kakao.maps.services.Geocoder();
+        geocoder.addressSearch(fullAddress, function(result, gStatus) {{
+          if (gStatus === kakao.maps.services.Status.OK) {{
+            placeMarker(result[0].y, result[0].x, fullAddress);
+          }} else {{
+            showError("지도를 표시할 수 없습니다 (장소를 찾지 못했어요). 길찾기 버튼으로 검색해주세요.");
+          }}
+        }});
+      }}, {{ location: center, radius: 20000 }});
     </script>
     """
     components.html(html, height=480)
