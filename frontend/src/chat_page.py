@@ -5,7 +5,7 @@ chat_page.py
 
 import streamlit as st
 
-from api_client import BackendError, ask, send_feedback
+from api_client import BackendError, ask_stream, send_feedback
 from sources import render_sources
 
 
@@ -49,32 +49,26 @@ def render():
             st.markdown(question)
 
         with st.chat_message("assistant"):
-            spinner_text = (
-                "🧠 모델을 처음 준비하는 중이에요. 첫 응답은 조금 더 걸릴 수 있어요..."
-                if not st.session_state.asked_once
-                else "💬 답변 생성 중..."
-            )
+            if not st.session_state.asked_once:
+                # 모델 최초 로딩 안내: 스트리밍 첫 토큰이 오기 전까지 잠깐 보여줌
+                st.caption("🧠 모델을 처음 준비하는 중이에요. 첫 응답은 조금 더 걸릴 수 있어요...")
 
             answer = ""
             sources = None
             is_error = False
 
-            with st.spinner(spinner_text):
-                try:
-                    data = ask(question)
-                    answer = data.get("answer", "")
-                    sources = data.get("sources")
-                except BackendError as e:
-                    answer = str(e)
-                    is_error = True
-
-            st.session_state.asked_once = True
-
-            if is_error:
+            # backend가 SSE로 토큰을 흘려주면 st.write_stream()이 도착하는 대로 화면에 찍어주고,
+            # 스트림이 끝나면 합쳐진 전체 텍스트를 반환한다.
+            try:
+                answer = st.write_stream(ask_stream(question)) or ""
+            except BackendError as e:
+                answer = str(e)
+                is_error = True
                 st.error(answer)
             else:
-                st.markdown(answer)
                 render_sources(sources)
+
+            st.session_state.asked_once = True
 
         st.session_state.messages.append(
             {

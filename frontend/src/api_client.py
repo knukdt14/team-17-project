@@ -6,6 +6,7 @@ api_client.py
   이 파일만 확장하면 되도록 창구를 하나로 모아둠.
 """
 
+import json
 import os
 
 import requests
@@ -18,24 +19,40 @@ class BackendError(Exception):
     """backend/model 호출 실패를 사용자에게 보여줄 메시지와 함께 감싸는 예외."""
 
 
-def ask(question: str, history: list[dict] | None = None) -> dict:
-    """질문을 backend /ask로 보내고 {"answer": ..., "sources": ...} 형태의 응답을 반환한다.
-    history는 아직 backend가 받지 않아도 무해하게 무시되므로(FastAPI/Pydantic 기본 동작이
-    정의 안 된 필드를 그냥 버림) 미리 실어 보내도 안전하다. backend가 history를 받기 시작하면
-    이 함수는 그대로 두고 backend만 바뀌면 됨.
+def ask_stream(question: str, history: list[dict] | None = None):
+    """질문을 backend /ask(SSE)로 보내고, 토큰을 하나씩 yield하는 제너레이터.
+    st.write_stream()에 그대로 넘기면 토큰이 도착하는 대로 화면에 찍힌다.
+    backend가 보내는 이벤트 형식: "data: {"token": "..."}\\n\\n" 반복 후 "data: [DONE]\\n\\n".
+    에러가 나면 "data: {"error": "..."}\\n\\n" 형태로 오는데, 이건 BackendError로 바꿔서 올린다.
+    history는 아직 backend가 안 받아도 무해하게 무시된다.
     """
     payload: dict = {"question": question}
     if history:
         payload["history"] = history
 
     try:
-        resp = requests.post(f"{BACKEND_URL}/ask", json=payload, timeout=REQUEST_TIMEOUT)
+        resp = requests.post(
+            f"{BACKEND_URL}/ask", json=payload, timeout=REQUEST_TIMEOUT, stream=True
+        )
         if resp.status_code == 429:
-            # 동시 요청이 몰려 backend/model이 바쁠 때를 대비한 안내 (backend가 아직 429를
-            # 내려주지 않아도 이 분기는 미리 준비해둔 것)
             raise BackendError("🚦 지금 다른 사용자의 답변을 생성하고 있어요. 잠시 후 다시 시도해주세요.")
         resp.raise_for_status()
-        return resp.json()
+
+        for raw_line in resp.iter_lines(decode_unicode=True):
+            if not raw_line or not raw_line.startswith("data:"):
+                continue
+            payload_str = raw_line[len("data:") :].strip()
+            if payload_str == "[DONE]":
+                return
+            try:
+                data = json.loads(payload_str)
+            except json.JSONDecodeError:
+                continue
+            if "error" in data:
+                raise BackendError(f"❌ {data['error']}")
+            token = data.get("token")
+            if token:
+                yield token
     except requests.Timeout as e:
         raise BackendError("⏱️ 죄송합니다, 응답 시간이 초과되었습니다. 잠시 후 다시 시도해주세요.") from e
     except requests.ConnectionError as e:
