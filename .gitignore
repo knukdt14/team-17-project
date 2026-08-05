@@ -3,6 +3,7 @@ __pycache__/
 *.pyc
 .venv/
 venv/
+team17/
 *.log
 
 # 로컬에서 서비스 없이 직접 실행할 때 생기는 벡터DB/업로드 캐시
@@ -14,3 +15,6 @@ faiss_db_*/
 chroma_db_*/
 
 .streamlit/
+# 위 규칙이 frontend/.streamlit/(테마 설정, git으로 관리돼야 함)까지 가리지 않도록 예외 처리
+!frontend/.streamlit/
+!frontend/.streamlit/config.toml
