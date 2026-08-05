@@ -1,0 +1,20 @@
+# 로컬(비-Docker) 환경에서 frontend/backend/model 3개 서비스를 한 venv로 같이 띄우거나,
+# model/src/evaluate.py로 성능평가를 돌릴 때 쓰는 통합 requirements.
+# 각 서비스를 Docker로 배포할 때는 이 파일이 아니라 backend/requirements.txt,
+# frontend/requirements.txt, model/requirements.txt를 각각 그대로 사용함.
+#
+# 설치 (torch는 GPU/CUDA 빌드를 받아야 하므로 index-url을 반드시 같이 지정):
+#   python -m venv .venv
+#   source .venv/Scripts/activate   (Windows Git Bash) / .venv\Scripts\activate (cmd)
+#   pip install --index-url https://download.pytorch.org/whl/cu130 \
+#               --extra-index-url https://pypi.org/simple \
+#               -r requirements-dev.txt
+
+-r backend/requirements.txt
+-r frontend/requirements.txt
+-r model/requirements.txt
+
+# ===== 성능평가 (model/src/evaluate.py) =====
+bert-score>=0.3.13
+pandas>=2.0.0
+hf_xet>=1.0.0          # 대용량 모델 가중치 다운로드 안정성 (Xet Storage)
