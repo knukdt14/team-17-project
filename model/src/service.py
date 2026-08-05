@@ -18,8 +18,14 @@ from pydantic import BaseModel
 
 from loader import load_pdf, load_pdf_directory
 from chunker import chunk_pages
-from retriever import get_or_build_store, get_retriever, get_hybrid_retriever, chunks_to_documents
-from rag_chain import get_rag_chain
+from retriever import (
+    get_or_build_store,
+    get_retriever,
+    get_hybrid_retriever,
+    chunks_to_documents,
+    persist_store,
+)
+from rag_chain import get_answer_chain, format_docs
 
 # 도커 컨테이너 기준 기본 경로. 로컬(비도커)에서 테스트할 때는 DATA_DIR/VECTORSTORE_DIR/UPLOAD_DIR
 # 환경변수로 리포지토리 루트 기준 상대경로를 넘겨서 오버라이드한다.
@@ -53,7 +59,10 @@ def _build_retriever():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     print("[model] 문서 로드 및 벡터스토어 준비 중...")
-    pages = load_pdf_directory(DATA_DIR)
+    # data/raw(기본 규정 PDF) + uploads(관리자가 이전에 올려서 반영한 PDF)를 같이 로드해야
+    # 재시작 후에도 업로드했던 PDF가 BM25 코퍼스(state["chunks"])에 그대로 남아있음.
+    # 벡터DB(FAISS)는 persist_store()로 디스크에 저장해두므로 여기서는 캐시를 그대로 재사용함.
+    pages = load_pdf_directory(DATA_DIR) + load_pdf_directory(str(UPLOAD_DIR))
     chunks = chunk_pages(pages)
     state["chunks"] = chunks
     state["vectorstore"] = get_or_build_store(
@@ -64,7 +73,7 @@ async def lifespan(app: FastAPI):
         embedding_device=EMBEDDING_DEVICE,
     )
     state["retriever"] = _build_retriever()
-    state["chain"] = get_rag_chain(state["retriever"], llm_key=LLM_KEY, prompt_style=PROMPT_STYLE)
+    state["chain"] = get_answer_chain(llm_key=LLM_KEY, prompt_style=PROMPT_STYLE)
     print("[model] 준비 완료 - 서버 시작")
     yield
     print("[model] 서버 종료")
@@ -100,11 +109,23 @@ def _sse(data: dict) -> str:
 
 
 def _stream_answer(question: str):
-    """RAG 체인을 토큰 단위로 스트리밍하며 SSE 이벤트로 흘려보낸다.
+    """검색 -> LLM 스트리밍 -> 마지막에 근거 문서(sources) 순서로 SSE 이벤트를 흘려보낸다.
     generate가 끝나기 전에 다음 요청이 GPU를 밟지 않도록, 스트림 소비가 끝날 때까지 gpu_lock을 쥔다."""
     with gpu_lock:
-        for token in state["chain"].stream(question):
+        docs = state["retriever"].invoke(question)
+        context = format_docs(docs)
+        for token in state["chain"].stream({"context": context, "question": question}):
             yield _sse({"token": token})
+
+    sources = [
+        {
+            "filename": doc.metadata.get("source"),
+            "page": doc.metadata.get("page_num"),
+            "text": doc.page_content,
+        }
+        for doc in docs
+    ]
+    yield _sse({"sources": sources})
     yield "data: [DONE]\n\n"
 
 
@@ -132,9 +153,12 @@ def ingest(file: UploadFile = File(...)):
 
     with gpu_lock:
         state["vectorstore"].add_documents(chunks_to_documents(new_chunks))
+        # FAISS는 add_documents만으로는 디스크 캐시에 반영이 안 돼서, 명시적으로 저장해야
+        # 컨테이너를 재시작해도 방금 추가한 PDF가 검색에 그대로 남아있음.
+        persist_store(state["vectorstore"], VECTORSTORE_BACKEND, EMBEDDING_MODEL_KEY, base_dir=VECTORSTORE_DIR)
         state["chunks"].extend(new_chunks)
         state["retriever"] = _build_retriever()
-        state["chain"] = get_rag_chain(state["retriever"], llm_key=LLM_KEY, prompt_style=PROMPT_STYLE)
+        state["chain"] = get_answer_chain(llm_key=LLM_KEY, prompt_style=PROMPT_STYLE)
 
     return IngestResponse(
         message="업로드 및 벡터DB 반영 완료",

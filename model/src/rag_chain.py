@@ -224,6 +224,20 @@ def get_rag_chain(retriever, llm_key: str = "gemini", prompt_style: str = "defau
     return rag_chain
 
 
+def get_answer_chain(llm_key: str = "gemini", prompt_style: str = "default"):
+    """retriever 없이 {context, question}만 받아 LLM 답변만 생성하는 체인.
+    get_rag_chain()처럼 retriever를 체인에 박아넣지 않는 이유: 호출자(service.py)가 검색된
+    문서(source)를 별도로 노출해야 할 때(SSE sources 이벤트 등) 검색과 생성을 분리해서
+    검색 결과에 직접 접근할 수 있어야 하기 때문. evaluate.py 등 기존 사용처는
+    get_rag_chain()을 그대로 쓰면 됨."""
+    print(f"\n[RAG Chain] LLM 로드 중... (llm_key={llm_key}, prompt_style={prompt_style})")
+    llm = get_llm(llm_key)
+    prompt = PROMPT_STYLES[prompt_style]
+    chain = prompt | llm | StrOutputParser()
+    print("[RAG Chain] RAG 파이프라인(검색 분리형) 조립 완료")
+    return chain
+
+
 if __name__ == "__main__":
     from chunker import chunk_pages
     from loader import load_pdf_directory

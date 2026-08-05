@@ -56,12 +56,12 @@ def render():
             )
 
             answer = ""
-            sources = None
+            sources: list = []
             is_error = False
 
             with st.spinner(spinner_text):
                 try:
-                    answer = st.write_stream(ask_stream(question))
+                    answer = st.write_stream(ask_stream(question, sources_out=sources))
                 except ModelServiceError as e:
                     answer = str(e)
                     is_error = True
