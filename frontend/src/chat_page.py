@@ -7,6 +7,7 @@ import streamlit as st
 
 from api_client import ModelServiceError, ask_stream, send_feedback
 from sources import render_sources
+from theme import page_header
 
 # 챗봇 화면에 바로 보여줄 자주 묻는 질문(규정 관련 위주).
 # 일정처럼 기수마다 값이 달라지는 정보는 여기 넣지 않는다 — 벡터DB가 기수 구분 없이
@@ -77,8 +78,7 @@ def _ask(question: str):
 
 
 def render():
-    st.title("KDT 규정집 챗봇")
-    st.caption("국민내일배움카드 / KDT 규정집 등 사내 규정에 대해 물어보세요.")
+    page_header("💬", "KDT 규정집 챗봇", "국민내일배움카드 / KDT 규정집 등 사내 규정에 대해 물어보세요.")
 
     if "messages" not in st.session_state:
         st.session_state.messages = []

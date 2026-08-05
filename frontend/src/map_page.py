@@ -15,6 +15,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 from cohorts import get_main_location
+from theme import page_header
 
 KAKAO_JS_KEY = os.environ.get("KAKAO_JS_KEY", "")
 
@@ -23,12 +24,12 @@ def render():
     cohort = st.session_state.get("selected_cohort")
     location = get_main_location(cohort)
 
-    st.title("📍 오시는길")
     if not location:
+        page_header("📍", "오시는길")
         st.warning("먼저 기수를 선택해주세요.")
         return
 
-    st.caption(f"{cohort} 교육 장소: {location}")
+    page_header("📍", "오시는길", f"{cohort} 교육 장소 · {location}")
 
     search_link = f"https://map.kakao.com/link/search/{quote(location)}"
 

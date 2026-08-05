@@ -9,6 +9,7 @@ import os
 import streamlit as st
 
 from cohorts import get_cohort
+from theme import page_header
 
 ASSETS_DIR = os.path.join(os.path.dirname(__file__), "..", "assets")
 
@@ -17,7 +18,7 @@ def render():
     cohort = st.session_state.get("selected_cohort")
     data = get_cohort(cohort)
 
-    st.title("🏫 강의실 사진")
+    page_header("🏫", "강의실 사진")
     if not data:
         st.warning("먼저 기수를 선택해주세요.")
         return

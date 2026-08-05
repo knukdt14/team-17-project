@@ -33,11 +33,23 @@ if "selected_cohort" not in st.session_state:
 
 def _render_cohort_picker():
     st.markdown(
-        "<div style='text-align:center;padding:1.5rem 0 0.5rem;'>"
-        "<div style='font-size:2.75rem;'>🎓</div>"
-        "<h1 style='margin-bottom:0.15rem;'>KDT 챗봇</h1>"
-        "<p style='color:#6B7280;font-size:1rem;margin-top:0;'>소속된 기수를 선택해주세요</p>"
-        "</div>",
+        """
+        <div style="
+            background:linear-gradient(135deg,#6366F1 0%,#8B5CF6 100%);
+            border-radius:28px;
+            padding:2.75rem 1.5rem;
+            text-align:center;
+            box-shadow:0 16px 36px rgba(99,102,241,0.28);
+            margin-bottom:1.75rem;
+        ">
+          <div style="font-size:3rem;">🎓</div>
+          <div style="color:#fff;font-size:1.8rem;font-weight:800;letter-spacing:-0.02em;
+                      margin:0.4rem 0 0.3rem;">KDT 챗봇</div>
+          <p style="color:rgba(255,255,255,0.88);margin:0;font-size:1rem;">
+            소속된 기수를 선택해주세요
+          </p>
+        </div>
+        """,
         unsafe_allow_html=True,
     )
 
@@ -49,12 +61,26 @@ def _render_cohort_picker():
             with col:
                 with st.container(border=True):
                     st.markdown(
-                        f"<div style='font-size:1.8rem;'>{data.get('icon', '🎓')}</div>",
+                        f"""
+                        <div style="width:52px;height:52px;border-radius:16px;
+                                    background:linear-gradient(135deg,#EEF0FE,#E0E7FF);
+                                    display:flex;align-items:center;justify-content:center;
+                                    font-size:1.6rem;margin:0.2rem auto 0.6rem;">
+                          {data.get('icon', '🎓')}
+                        </div>
+                        <div style="text-align:center;font-weight:800;font-size:1.05rem;">{name}</div>
+                        <p style="text-align:center;color:#6B7280;font-size:0.85rem;margin:0.15rem 0 0.8rem;">
+                          {data.get('subtitle', '')}
+                        </p>
+                        """,
                         unsafe_allow_html=True,
                     )
-                    st.markdown(f"**{name}**")
-                    st.caption(data.get("subtitle", ""))
-                    if st.button("선택", key=f"cohort_{name}", use_container_width=True):
+                    if st.button(
+                        "선택",
+                        key=f"cohort_{name}",
+                        use_container_width=True,
+                        type="primary",
+                    ):
                         st.session_state.selected_cohort = name
                         st.rerun()
 
@@ -63,7 +89,16 @@ if not st.session_state.selected_cohort:
     _render_cohort_picker()
 else:
     with st.sidebar:
-        st.caption(f"📌 현재 기수: **{st.session_state.selected_cohort}**")
+        st.markdown(
+            f"""
+            <div style="background:linear-gradient(135deg,#6366F1,#8B5CF6);
+                        color:#fff;border-radius:14px;padding:0.7rem 0.9rem;
+                        font-weight:700;margin-bottom:0.6rem;box-shadow:0 4px 12px rgba(99,102,241,0.25);">
+              📌 현재 기수 · {st.session_state.selected_cohort}
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
         if st.button("기수 변경", use_container_width=True):
             st.session_state.selected_cohort = None
             st.rerun()

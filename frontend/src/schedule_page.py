@@ -7,6 +7,7 @@ schedule_page.py
 import streamlit as st
 
 from cohorts import get_cohort
+from theme import page_header
 
 
 def render():
@@ -16,8 +17,7 @@ def render():
         st.warning("먼저 기수를 선택해주세요.")
         return
 
-    st.title(f"📅 {cohort} 교육 일정")
-    st.caption(data.get("title", ""))
+    page_header("📅", f"{cohort} 교육 일정", data.get("title", ""))
 
     st.subheader("교육 기간")
     for label, value in data.get("period", {}).items():
