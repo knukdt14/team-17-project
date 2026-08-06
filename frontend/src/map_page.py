@@ -23,6 +23,18 @@ map_page.py
 - KAKAO_JS_KEY가 없으면 지도 없이 딥링크 버튼만 보여준다.
 - main.py의 ui.sub_pages가 이 함수를 "/map" 콘텐츠로 호출하므로 @ui.page 데코레이터와
   frame() 호출은 여기서 하지 않는다(헤더는 root_page에서 한 번만 그린다).
+- ui.sub_pages는 탭 이동을 브라우저 새로고침 없이 client-side로 처리하는데,
+  ui.add_body_html()로 넣은 <script>는 이런 재진입 상황에서 다시 실행되지 않을 수 있다
+  (다른 탭 갔다가 "오시는길"로 돌아오면 지도가 아예 안 뜨는 문제로 나타남). 그래서 지도
+  초기화/경로 로직은 ui.run_javascript()로 호출한다 - 이건 map_page()가 실행될 때마다
+  "지금 붙어있는 클라이언트에게 이 JS를 실행해라"고 그때그때 보내는 방식이라 재진입에도
+  항상 실행된다.
+- 카카오맵 SDK <script>는 여기서 붙이지 않는다. 처음엔 이 함수 안에서 JS로 동적으로
+  <script> 태그를 만들어 붙였는데(autoload=false + kakao.maps.load() 방식), sub_pages
+  재진입 시 간헐적으로 초기화가 멈추는(새로고침해야만 되는) 문제가 있었다. 그래서
+  main.py의 root_page()가 진짜 페이지 로드 시점에 <head>에 한 번만 선언적으로 붙이는
+  방식으로 되돌렸다(예전에 항상 안정적으로 동작하던 방식과 동일). 여기서는 그게 준비될
+  때까지 window.kakao.maps.LatLng 존재 여부만 기다린다(waitUntilReady).
 """
 
 import json
@@ -129,15 +141,18 @@ def map_page():
                 "이 페이지에서 자동으로 경로가 안 그려지면 이 버튼으로 카카오맵 앱/웹에서 바로 안내받을 수 있어요."
             ).classes("text-xs").style(f"color:{MUTED};")
 
-    ui.add_body_html(
+    # main.py가 ui.sub_pages로 화면을 client-side 라우팅하면서 map_page()가 매번 다시
+    # 호출되는데, ui.add_body_html()로 넣은 <script>는 (특히 sub_pages 전환처럼 브라우저가
+    # 실제로 새로고침되지 않는 상황에서) 두 번째 방문부터는 다시 실행이 안 되는 경우가 있다
+    # (NiceGUI GitHub 이슈로도 보고된 문제). 그래서 ui.run_javascript()로 바꿨다 - 이건
+    # "지금 붙어있는 클라이언트한테 이 JS를 실행해라"라고 그때그때 보내는 방식이라, 처음
+    # 진입이든 tab 이동으로 재진입이든 map_page()가 호출될 때마다 항상 실행된다.
+    # 카카오맵 SDK <script> 자체는 여기서 붙이지 않는다 - main.py의 root_page()가 진짜
+    # 페이지 로드 시점에 <head>에 한 번만 선언적으로 붙여준다(예전에 항상 잘 되던 방식).
+    # 여기서는 그게 준비될 때까지 window.kakao.maps.LatLng 존재 여부만 기다린다.
+    ui.run_javascript(
         f"""
-        <script
-          src="https://dapi.kakao.com/v2/maps/sdk.js?appkey={KAKAO_JS_KEY}&libraries=services"
-          onerror="var c=document.getElementById('kdt-map'); if(c) c.innerHTML=
-            '<p style=\\'padding:16px;color:#c0392b;font-size:0.85rem;\\'>카카오맵 스크립트를 불러오지 못했습니다 (네트워크 차단 또는 잘못된 키). 길찾기 버튼으로 이용해주세요.</p>';"
-        ></script>
-        <script>
-          (function() {{
+        (function() {{
             var keyword = {json.dumps(keyword)};
             var fullAddress = {json.dumps(location)};
             var knownAddress = {json.dumps(known_address)};
@@ -333,25 +348,30 @@ def map_page():
               }});
             }};
 
-            // #kdt-map은 NiceGUI가 클라이언트에서 Vue로 그리는 DOM이라, 이 스크립트가
-            // 실행되는 시점엔 아직 화면에 존재하지 않을 수 있다. 생길 때까지 잠깐씩 재시도한다.
-            // 그리고 "DOM에 존재한다"와 "실제 화면 크기(레이아웃)를 다 잡았다"는 다른 얘기다 -
-            // Vue가 요소를 막 넣은 직후에는 태그는 있어도 offsetWidth/Height가 0일 수 있는데,
-            // 이 상태에서 지도를 만들면 카카오맵이 크기를 0으로 기억해버려서, 나중에 relayout을
-            // 불러도 "아주 작은 화면에 전체 경로를 욱여넣으려는" 계산이 되어 지도가 확 축소된
-            // 화면(한국 전체~일본까지 보이는 수준)으로 나온다. 그래서 크기가 실제로 잡힐 때까지
-            // 기다렸다가 지도를 만든다.
-            function waitForContainer(retriesLeft) {{
+            // 두 가지가 다 준비돼야 지도를 만들 수 있다:
+            // 1) #kdt-map DOM - NiceGUI가 클라이언트에서 Vue로 그리는 요소라 이 스크립트가
+            //    실행되는 시점엔 아직 없거나, 있어도 "실제 화면 크기(레이아웃)"는 아직 0일 수
+            //    있다(태그만 막 들어간 직후). 크기가 0인 채로 지도를 만들면 카카오맵이 크기를
+            //    0으로 기억해버려서 지도가 확 축소된 화면(한국 전체~일본까지 보이는 수준)으로
+            //    나온다.
+            // 2) 카카오맵 SDK(window.kakao.maps.LatLng) - root_page()의 <head> 스크립트가
+            //    비동기로 로드/초기화되는 중이라, 우리 스크립트가 그보다 먼저 실행됐을 수 있다.
+            // 그래서 둘 다 실제로 준비될 때까지 잠깐씩(최대 10초) 재시도한다.
+            function waitUntilReady(retriesLeft) {{
               var container = document.getElementById('kdt-map');
-              var ready = container && container.offsetWidth > 0 && container.offsetHeight > 0;
-              if (!ready) {{
+              var containerReady = container && container.offsetWidth > 0 && container.offsetHeight > 0;
+              var sdkReady = window.kakao && window.kakao.maps && window.kakao.maps.LatLng;
+              if (!containerReady || !sdkReady) {{
                 if (retriesLeft > 0) {{
-                  setTimeout(function() {{ waitForContainer(retriesLeft - 1); }}, 100);
+                  setTimeout(function() {{ waitUntilReady(retriesLeft - 1); }}, 100);
                   return;
                 }}
-                // 5초 넘게 기다렸는데도 컨테이너 크기가 안 잡히면(느린 네트워크 등) 아무 설명
-                // 없이 빈 화면으로 남기지 말고, 최소한 원인과 대안을 알려준다.
-                setRouteInfo("지도를 불러오는 데 시간이 오래 걸리고 있습니다. 새로고침하거나 길찾기 버튼을 이용해주세요.", true, true);
+                // 10초 넘게 기다렸는데도 준비가 안 되면(느린 네트워크, SDK 로드 실패 등) 아무
+                // 설명 없이 빈 화면으로 남기지 말고, 최소한 원인과 대안을 알려준다.
+                var reason = !sdkReady
+                  ? "카카오맵 스크립트를 불러오지 못했습니다 (네트워크 차단 또는 잘못된 키)."
+                  : "지도를 불러오는 데 시간이 오래 걸리고 있습니다.";
+                setRouteInfo(reason + " 새로고침하거나 길찾기 버튼을 이용해주세요.", true, true);
                 return;
               }}
               initMap(container);
@@ -367,7 +387,7 @@ def map_page():
                 var center = new kakao.maps.LatLng(35.8714, 128.6014);
                 map = new kakao.maps.Map(container, {{ center: center, level: 4 }});
 
-                // waitForContainer에서 크기를 확인하고 들어왔어도, 이후에 사이드바 열림/닫힘,
+                // waitUntilReady에서 크기를 확인하고 들어왔어도, 이후에 사이드바 열림/닫힘,
                 // 창 크기 변경, 폰트 로딩 등으로 컨테이너 크기가 또 바뀔 수 있다. 그때마다
                 // 자동으로 relayout해서 카카오맵이 기억하는 크기가 항상 실제 화면과 맞도록
                 // 감시해둔다 (구형 브라우저 대비 ResizeObserver 미지원 시 window resize로 대체).
@@ -447,8 +467,7 @@ def map_page():
               }}
             }}
 
-            waitForContainer(50);
+            waitUntilReady(100);
           }})();
-        </script>
         """
     )
