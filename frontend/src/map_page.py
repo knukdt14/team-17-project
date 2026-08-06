@@ -64,7 +64,7 @@ def map_page():
 
     search_link = f"https://map.kakao.com/link/search/{quote(location)}"
 
-    with ui.card().classes("w-full p-5 mb-4"):
+    with ui.card().classes("w-full p-5 mb-4 kdt-fade-up"):
         ui.label(cohort).classes("text-xs font-bold").style(f"color:{ACCENT};")
         ui.label(location).classes("text-lg font-extrabold mt-0.5").style(f"color:{INK};")
 
@@ -80,7 +80,7 @@ def map_page():
     keyword = _place_keyword(location)
     known_address = _KNOWN_ADDRESSES.get(keyword)
 
-    with ui.card().classes("w-full p-3"):
+    with ui.card().classes("w-full p-3 kdt-fade-up").style("animation-delay: 0.1s;"):
         ui.html(
             f"""
             <div id="kdt-map" style="width:100%;height:520px;border-radius:12px;"></div>

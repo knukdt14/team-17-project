@@ -1,8 +1,10 @@
 """
 theme.py
-- 앱 전체 브랜드 컬러 / 헤더 / 좌측 네비게이션(드로어)을 한 곳에서 관리한다.
-- 경북대 데이터융복합연구원 사이트 톤(화이트 배경 + 레드 포인트 + 카드형 그리드)을 참고해서,
-  Streamlit 시절의 인디고 그라데이션 톤 대신 절제된 기관형 톤으로 바꿨다.
+- 앱 전체 브랜드 컬러 / 모션(애니메이션) 시스템 / 헤더 / 좌측 네비게이션(드로어)을
+  한 곳에서 관리한다.
+- "AI 웹디자이너" 컨셉으로 다시 다듬은 톤: 크림슨 레드 + 딥 잉크 + 골드 포인트를 쓰는
+  고급 기관형 팔레트, Pretendard 폰트, 카드/버튼/말풍선에 진입 애니메이션과 호버
+  인터랙션을 광범위하게 깔아서 Streamlit 시절의 밋밋한 느낌을 완전히 벗어난다.
   헤더 좌측에는 경북대 로고(frontend/assets/logo_13.png)를 고정으로 붙인다.
 - frame()이 모든 페이지 공통 뼈대(헤더+드로어)를 그리고, 각 페이지는 그 아래 본문만 채우면 된다.
 """
@@ -18,11 +20,13 @@ ASSETS_DIR = os.path.join(os.path.dirname(__file__), "..", "assets")
 KNU_LOGO_PATH = os.path.join(ASSETS_DIR, "logo_13.png")
 
 ACCENT = "#C8102E"
+ACCENT_DARK = "#8F0B21"
 ACCENT_SOFT = "#C8102E14"
-INK = "#1F2937"
+GOLD = "#AD8A3B"
+INK = "#1B1F2A"
 MUTED = "#6B7280"
-BORDER = "#E5E7EB"
-BG = "#FAFAFA"
+BORDER = "#E9E5DD"
+BG = "#FAF9F6"
 # 관리자로 로그인하면 화면 전체가 살짝 어두워져서 "지금은 일반 화면이 아니다"가 한눈에
 # 구분되게 한다.
 ADMIN_BG = "#D7DBE2"
@@ -41,21 +45,124 @@ def apply_global_style():
     body_bg = ADMIN_BG if is_admin() else BG
     ui.add_head_html(
         f"""
+        <link rel="preconnect" href="https://cdn.jsdelivr.net">
         <style>
-          body {{ background: {body_bg} !important; }}
-          .q-card {{
-            border-radius: 14px !important;
-            border: 1px solid {BORDER} !important;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.04) !important;
+          @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css');
+
+          :root {{
+            --kdt-accent: {ACCENT};
+            --kdt-accent-dark: {ACCENT_DARK};
+            --kdt-gold: {GOLD};
+            --kdt-ink: {INK};
+            --kdt-muted: {MUTED};
+            --kdt-border: {BORDER};
+            --kdt-shadow-sm: 0 2px 8px rgba(27,31,42,0.06);
+            --kdt-shadow-md: 0 12px 28px rgba(27,31,42,0.10), 0 2px 6px rgba(27,31,42,0.06);
+            --kdt-shadow-glow: 0 18px 40px rgba(200,16,46,0.18);
           }}
-          .q-menu {{ border-radius: 12px !important; }}
+
+          html, body, .q-field, .q-btn, .q-card {{
+            font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
+          }}
+
+          body {{
+            background: {body_bg} !important;
+            background-image:
+              radial-gradient(circle at 12% 8%, rgba(200,16,46,0.045) 0%, transparent 45%),
+              radial-gradient(circle at 88% 92%, rgba(173,138,59,0.05) 0%, transparent 45%);
+            background-attachment: fixed;
+          }}
+
+          ::selection {{ background: {ACCENT}; color: #fff; }}
+
+          ::-webkit-scrollbar {{ width: 10px; height: 10px; }}
+          ::-webkit-scrollbar-track {{ background: transparent; }}
+          ::-webkit-scrollbar-thumb {{
+            background: linear-gradient(180deg, {ACCENT}, {ACCENT_DARK});
+            border-radius: 999px;
+            border: 2px solid {BG};
+          }}
+
+          /* ---------- 모션 시스템 ---------- */
+          @keyframes kdt-fade-up {{
+            from {{ opacity: 0; transform: translateY(14px); }}
+            to   {{ opacity: 1; transform: translateY(0); }}
+          }}
+          @keyframes kdt-fade-in {{
+            from {{ opacity: 0; }}
+            to   {{ opacity: 1; }}
+          }}
+          @keyframes kdt-pop-in {{
+            0%   {{ opacity: 0; transform: scale(0.94) translateY(8px); }}
+            100% {{ opacity: 1; transform: scale(1) translateY(0); }}
+          }}
+          @keyframes kdt-underline-grow {{
+            from {{ width: 0; }}
+            to   {{ width: 100%; }}
+          }}
+          @keyframes kdt-pulse-glow {{
+            0%, 100% {{ box-shadow: 0 0 0 0 rgba(200,16,46,0.28); }}
+            50%      {{ box-shadow: 0 0 0 8px rgba(200,16,46,0); }}
+          }}
+
+          .kdt-fade-up {{ animation: kdt-fade-up 0.6s cubic-bezier(.2,.7,.2,1) both; }}
+          .kdt-stagger > * {{ opacity: 0; animation: kdt-pop-in 0.55s cubic-bezier(.2,.7,.2,1) both; }}
+          .kdt-stagger > *:nth-child(1) {{ animation-delay: 0.02s; }}
+          .kdt-stagger > *:nth-child(2) {{ animation-delay: 0.10s; }}
+          .kdt-stagger > *:nth-child(3) {{ animation-delay: 0.18s; }}
+          .kdt-stagger > *:nth-child(4) {{ animation-delay: 0.26s; }}
+          .kdt-stagger > *:nth-child(5) {{ animation-delay: 0.34s; }}
+          .kdt-stagger > *:nth-child(6) {{ animation-delay: 0.42s; }}
+
+          /* ---------- 카드 ---------- */
+          .q-card {{
+            border-radius: 18px !important;
+            border: 1px solid {BORDER} !important;
+            box-shadow: var(--kdt-shadow-sm) !important;
+            transition: transform 0.28s cubic-bezier(.2,.7,.2,1), box-shadow 0.28s ease, border-color 0.28s ease;
+          }}
+          a.no-underline .q-card, .kdt-hover .q-card {{ will-change: transform; }}
+
+          /* ---------- 버튼 ---------- */
+          .q-btn {{
+            transition: transform 0.18s ease, box-shadow 0.18s ease, filter 0.18s ease !important;
+            border-radius: 12px;
+          }}
+          .q-btn:active {{ transform: scale(0.97); }}
+          .q-btn.bg-primary, .q-btn[color=primary] {{
+            background: linear-gradient(135deg, {ACCENT} 0%, {ACCENT_DARK} 100%) !important;
+          }}
+
+          .q-menu {{
+            border-radius: 16px !important;
+            box-shadow: var(--kdt-shadow-md) !important;
+            animation: kdt-pop-in 0.18s ease both;
+          }}
+
+          /* ---------- 채팅 말풍선: 새로 생기면 자동으로 슬라이드-인 ---------- */
+          .q-message {{ animation: kdt-fade-up 0.4s cubic-bezier(.2,.7,.2,1) both; }}
           .q-message-text--sent, .q-message-text--sent > div {{
-            background: {ACCENT} !important; color: #fff !important;
+            background: linear-gradient(135deg, {ACCENT} 0%, {ACCENT_DARK} 100%) !important;
+            color: #fff !important;
+            box-shadow: 0 6px 16px rgba(200,16,46,0.22);
           }}
           .q-message-text--received, .q-message-text--received > div {{
-            background: #F3F4F6 !important; color: {INK} !important;
+            background: #FFFFFF !important;
+            color: {INK} !important;
+            border: 1px solid {BORDER};
+            box-shadow: var(--kdt-shadow-sm);
           }}
-          .q-message-name {{ color: {MUTED} !important; font-weight: 600 !important; font-size: 0.75rem !important; }}
+          .q-message-name {{
+            color: {MUTED} !important; font-weight: 700 !important; font-size: 0.72rem !important;
+            letter-spacing: 0.02em;
+          }}
+
+          /* ---------- 토글(무료/유료) ---------- */
+          .q-btn-toggle {{ transition: box-shadow 0.25s ease; }}
+          .q-btn-toggle .q-btn {{ transition: background 0.25s ease, color 0.25s ease !important; }}
+
+          /* ---------- 링크 ---------- */
+          a {{ transition: color 0.2s ease; }}
         </style>
         """
     )
@@ -70,9 +177,13 @@ def _clear_cohort():
 
 def _brand_mark():
     with ui.row().classes("items-center gap-3"):
-        ui.element("div").classes("w-2.5 h-8 rounded-sm").style(f"background:{ACCENT};")
+        ui.element("div").classes("w-1 h-9 rounded-full").style(
+            f"background:linear-gradient(180deg,{ACCENT},{GOLD});"
+        )
         if os.path.exists(KNU_LOGO_PATH):
-            ui.image(KNU_LOGO_PATH).classes("w-8 h-8").props("fit=contain")
+            ui.image(KNU_LOGO_PATH).classes("w-8 h-8 transition-transform hover:scale-110").props(
+                "fit=contain"
+            )
         with ui.column().classes("gap-0"):
             ui.label("KDT AI·빅데이터").classes("font-extrabold text-base leading-tight").style(f"color:{INK};")
             ui.label("경북대학교 데이터융복합연구원").classes("text-[11px] leading-tight").style(f"color:{MUTED};")
@@ -113,8 +224,9 @@ def frame(current_path: str = ""):
     cohort = app.storage.user.get("selected_cohort")
     admin = is_admin()
 
-    with ui.header().classes("items-center justify-between bg-white px-6 py-3").style(
-        f"border-bottom: 3px solid {ACCENT};"
+    with ui.header().classes("items-center justify-between px-6 py-3").style(
+        f"background: rgba(255,255,255,0.85); backdrop-filter: blur(10px); "
+        f"border-bottom: 1px solid {BORDER}; box-shadow: 0 1px 0 {GOLD}55;"
     ):
         _brand_mark()
         render_login_widget()
@@ -132,10 +244,17 @@ def frame(current_path: str = ""):
             def _nav_link(label: str, path: str):
                 active = path == current_path
                 link = ui.link(label, path).classes(
-                    "flex items-center gap-2 py-2 px-3 rounded-lg no-underline mb-1"
+                    "flex items-center gap-2 py-2 px-3 rounded-lg no-underline mb-1 transition-all"
                     + (" font-bold" if active else "")
                 )
-                link.style(f"background:{ACCENT_SOFT}; color:{ACCENT};" if active else f"color:{INK};")
+                link.style(
+                    (
+                        f"background:linear-gradient(90deg,{ACCENT_SOFT},transparent); "
+                        f"color:{ACCENT}; border-left: 3px solid {ACCENT};"
+                    )
+                    if active
+                    else f"color:{INK}; border-left: 3px solid transparent;"
+                )
 
             for label, path in NAV_ITEMS:
                 _nav_link(label, path)
@@ -150,11 +269,14 @@ def frame(current_path: str = ""):
 def page_header(icon: str, title: str, subtitle: str = "", *, right=None):
     """오른쪽에 부가 컨트롤(예: 챗봇의 무료/유료 토글)을 같이 놓고 싶을 때는
     right에 그 내용을 그리는 콜백을 넘기면 된다."""
-    with ui.row().classes("items-center justify-between w-full mb-6 flex-wrap gap-3"):
+    with ui.row().classes("items-center justify-between w-full mb-6 flex-wrap gap-3 kdt-fade-up"):
         with ui.row().classes("items-center gap-3"):
             with ui.element("div").classes(
                 "w-12 h-12 min-w-[3rem] rounded-xl flex items-center justify-center text-xl"
-            ).style(f"background:{ACCENT_SOFT};"):
+            ).style(
+                f"background:linear-gradient(135deg,{ACCENT_SOFT},transparent); "
+                f"box-shadow: inset 0 0 0 1px {ACCENT}22;"
+            ):
                 ui.label(icon)
             with ui.column().classes("gap-0"):
                 ui.label(title).classes("text-2xl font-extrabold").style(f"color:{INK};")

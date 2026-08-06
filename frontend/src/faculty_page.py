@@ -54,7 +54,9 @@ def _initials(name: str) -> str:
 
 
 def _faculty_card(p: dict):
-    with ui.card().classes("items-center text-center p-8 w-64"):
+    with ui.card().classes(
+        "items-center text-center p-8 w-64 transition-all hover:-translate-y-1.5"
+    ).style("cursor: default;"):
         with ui.element("div").classes(
             "w-24 h-24 rounded-full flex items-center justify-center text-3xl font-extrabold mb-4 mx-auto"
         ).style(f"background:{ACCENT}; color:#fff;"):
@@ -78,6 +80,6 @@ def faculty_page():
 
     for section_title, people in FACULTY:
         ui.label(section_title).classes("font-extrabold text-base mb-4 mt-2").style(f"color:{ACCENT};")
-        with ui.row().classes("gap-6 flex-wrap mb-8"):
+        with ui.row().classes("gap-6 flex-wrap mb-8 kdt-stagger"):
             for p in people:
                 _faculty_card(p)

@@ -1,8 +1,9 @@
 """
 landing.py
 - 기수를 먼저 선택해야 다른 탭(챗봇/일정/오시는길/교수진)이 나타난다.
-- 4개 기수 카드를 가로 한 줄에 폭 꽉 채워 나란히 배치하고 은은하게 부유시키다가,
-  카드를 클릭하면 그 기수로 화면이 전환된다.
+- 4개 기수 카드를 가로 한 줄에 폭 꽉 채워 나란히 배치한다. 페이지 진입 시 순서대로
+  팝인하고, 자리 잡은 뒤에는 각자 다른 리듬으로 은은히 부유한다. 카드를 클릭하면
+  그 기수로 화면이 전환된다.
 - 이미 기수를 선택한 상태로 "/"에 들어오면 바로 챗봇으로 보낸다. "기수 변경" 버튼만
   선택(+대화기록)을 지우고 여기로 돌아오게 한다 (theme.py의 좌측 드로어에서 호출).
 """
@@ -13,7 +14,7 @@ from nicegui import app, ui
 
 from auth import is_admin
 from cohorts import COHORT_LIST, get_cohort
-from theme import ACCENT, INK, MUTED, frame
+from theme import ACCENT, GOLD, INK, MUTED, frame
 
 ASSETS_DIR = os.path.join(os.path.dirname(__file__), "..", "assets")
 
@@ -26,25 +27,43 @@ _FLOAT_CSS = f"""
     z-index: 0;
     pointer-events: none;
   }}
+  @keyframes kdt-drift {{
+    0%   {{ transform: translate(0px, 0px) rotate(0deg); }}
+    50%  {{ transform: translate(36px, -26px) rotate(10deg); }}
+    100% {{ transform: translate(0px, 0px) rotate(0deg); }}
+  }}
+  @keyframes kdt-card-in {{
+    from {{ opacity: 0; transform: translateY(28px) scale(0.94); }}
+    to   {{ opacity: 1; transform: translateY(0) scale(1); }}
+  }}
   @keyframes kdt-float {{
     0%, 100% {{ transform: translateY(0px); }}
     50% {{ transform: translateY(-12px); }}
   }}
   .kdt-float-card {{
-    animation: kdt-float 6.5s ease-in-out infinite;
-    transition: transform 0.25s ease, box-shadow 0.25s ease;
+    opacity: 0;
     position: relative;
     z-index: 1;
+    animation: kdt-card-in 0.7s cubic-bezier(.2,.7,.2,1) forwards, kdt-float 6.5s ease-in-out infinite;
+    animation-delay: 0.05s, 0.75s;
+    transition: transform 0.3s cubic-bezier(.2,.7,.2,1), box-shadow 0.3s ease, border-color 0.3s ease;
   }}
-  .kdt-float-card:nth-child(2) {{ animation-delay: -1.6s; animation-duration: 7.2s; }}
-  .kdt-float-card:nth-child(3) {{ animation-delay: -3.2s; animation-duration: 6.8s; }}
-  .kdt-float-card:nth-child(4) {{ animation-delay: -4.8s; animation-duration: 7.6s; }}
+  .kdt-float-card:nth-child(2) {{ animation-delay: 0.15s, 1.35s; animation-duration: 0.7s, 7.2s; }}
+  .kdt-float-card:nth-child(3) {{ animation-delay: 0.25s, 1.85s; animation-duration: 0.7s, 6.8s; }}
+  .kdt-float-card:nth-child(4) {{ animation-delay: 0.35s, 2.35s; animation-duration: 0.7s, 7.6s; }}
   .kdt-float-card:hover {{
-    animation-play-state: paused;
-    transform: translateY(-8px) scale(1.04);
-    box-shadow: 0 20px 40px rgba(200,16,46,0.18) !important;
+    animation-play-state: paused, paused;
+    transform: translateY(-10px) scale(1.045) rotate(-0.6deg);
+    box-shadow: 0 24px 48px rgba(200,16,46,0.22), 0 4px 14px rgba(173,138,59,0.15) !important;
     border-color: {ACCENT} !important;
   }}
+  .kdt-hero > * {{
+    opacity: 0;
+    animation: kdt-fade-up 0.7s cubic-bezier(.2,.7,.2,1) forwards;
+  }}
+  .kdt-hero > *:nth-child(1) {{ animation-delay: 0.05s; }}
+  .kdt-hero > *:nth-child(2) {{ animation-delay: 0.18s; }}
+  .kdt-hero > *:nth-child(3) {{ animation-delay: 0.30s; }}
 </style>
 """
 
@@ -65,22 +84,30 @@ def landing():
     ui.add_head_html(_FLOAT_CSS)
 
     ui.element("div").classes("kdt-blob").style(
-        f"width:480px; height:480px; top:-160px; left:-160px; background:{ACCENT}; opacity:0.10;"
+        f"width:520px; height:520px; top:-180px; left:-180px; background:{ACCENT}; "
+        f"opacity:0.10; animation: kdt-drift 20s ease-in-out infinite;"
     )
     ui.element("div").classes("kdt-blob").style(
-        f"width:420px; height:420px; bottom:-140px; right:-140px; background:{ACCENT}; opacity:0.08;"
+        f"width:460px; height:460px; bottom:-160px; right:-160px; background:{ACCENT}; "
+        f"opacity:0.08; animation: kdt-drift 24s ease-in-out infinite reverse;"
+    )
+    ui.element("div").classes("kdt-blob").style(
+        f"width:320px; height:320px; top:38%; left:50%; background:{GOLD}; "
+        f"opacity:0.07; animation: kdt-drift 16s ease-in-out infinite; animation-delay: -4s;"
     )
 
     with ui.column().classes(
         "w-full items-center justify-center gap-16 px-4 py-24 relative min-h-[85vh]"
     ).style("z-index:1;"):
-        with ui.column().classes("items-center gap-2 text-center"):
+        with ui.column().classes("items-center gap-2 text-center kdt-hero"):
             ui.label("KDT AI·빅데이터 전문가 양성과정").classes("text-3xl font-extrabold").style(f"color:{INK};")
             ui.label("소속된 기수를 선택해주세요").classes("text-base").style(f"color:{MUTED};")
-            ui.element("div").classes("w-12 h-1 rounded-full mt-2").style(f"background:{ACCENT};")
+            ui.element("div").classes("w-12 h-1 rounded-full mt-2").style(
+                f"background:linear-gradient(90deg,{ACCENT},{GOLD});"
+            )
 
         # overflow-x-auto만 줘도 CSS 스펙상 overflow-y가 auto로 강제 승격돼서, 카드가
-        # 위로 떠오르는 애니메이션(-12px)의 윗부분이 잘려 보였다. 가로 스크롤 안전장치보다
+        # 위로 떠오르는 애니메이션의 윗부분이 잘려 보였다. 가로 스크롤 안전장치보다
         # 이 클리핑 버그가 더 커서, overflow 자체를 없애고 카드 폭 축소(min-w-0)로만 방어한다.
         with ui.row().classes("w-full max-w-5xl gap-10 flex-nowrap px-1 justify-center py-4"):
             for name in COHORT_LIST:
@@ -91,7 +118,7 @@ def landing():
                     logo_path = os.path.join(ASSETS_DIR, data["logo"]) if data.get("logo") else None
                     with ui.element("div").classes(
                         "w-16 h-16 rounded-2xl flex items-center justify-center text-3xl mb-3 mx-auto overflow-hidden"
-                    ).style(f"background:{ACCENT}14;"):
+                    ).style(f"background:{ACCENT}14; box-shadow: inset 0 0 0 1px {GOLD}33;"):
                         if logo_path and os.path.exists(logo_path):
                             ui.image(logo_path).classes("w-full h-full").props("fit=cover")
                         else:

@@ -31,7 +31,7 @@ def schedule_page():
         steps.append(("본교육", period.get("정규교육"), location.get("본교육") or location.get("정규교육")))
     steps.append(("수료", "전 과정 이수 후 수료증 발급", None))
 
-    with ui.column().classes("w-full gap-0 mb-2"):
+    with ui.column().classes("w-full gap-0 mb-2 kdt-fade-up"):
         for i, (label, period_text, loc_text) in enumerate(steps):
             is_last = i == len(steps) - 1
             with ui.row().classes("w-full gap-4 items-stretch"):
@@ -48,7 +48,7 @@ def schedule_page():
                     if loc_text:
                         ui.label(f"📍 {loc_text}").classes("text-sm").style(f"color:{INK};")
 
-    with ui.grid(columns=2).classes("w-full gap-4"):
+    with ui.grid(columns=2).classes("w-full gap-4 kdt-stagger"):
         with ui.card().classes("p-4"):
             ui.label("모집 기간").classes("font-bold text-sm mb-1").style(f"color:{ACCENT};")
             ui.label(data.get("apply_period", "정보 없음")).classes("text-sm").style(f"color:{INK};")
@@ -62,7 +62,7 @@ def schedule_page():
     benefits = data.get("benefits", [])
     if benefits:
         ui.label("참여 혜택").classes("font-extrabold text-base mt-6 mb-2").style(f"color:{INK};")
-        with ui.column().classes("gap-1.5"):
+        with ui.column().classes("gap-1.5 kdt-fade-up"):
             for b in benefits:
                 with ui.row().classes("items-start gap-2 flex-nowrap"):
                     ui.label("●").classes("text-xs mt-1").style(f"color:{ACCENT};")

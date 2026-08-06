@@ -30,6 +30,30 @@ FAQ_QUESTIONS = [
 # 이모지 아바타 대신 말풍선 위에 붙는 작은 텍스트 라벨로 - q-chat-message의 name 속성.
 LABELS = {"user": "사용자", "assistant": "AI 어시스턴트"}
 
+_CHAT_CSS = """
+<style>
+  .kdt-typing { display:inline-flex; gap:5px; align-items:center; padding:4px 0; }
+  .kdt-typing span {
+    width:7px; height:7px; border-radius:50%;
+    background: var(--kdt-accent);
+    animation: kdt-typing-bounce 1.1s ease-in-out infinite;
+  }
+  .kdt-typing span:nth-child(2) { animation-delay: 0.15s; }
+  .kdt-typing span:nth-child(3) { animation-delay: 0.30s; }
+  @keyframes kdt-typing-bounce {
+    0%, 60%, 100% { transform: translateY(0); opacity: 0.45; }
+    30% { transform: translateY(-6px); opacity: 1; }
+  }
+  .kdt-input .q-field__control {
+    border-radius: 14px !important;
+    transition: box-shadow 0.2s ease, border-color 0.2s ease;
+  }
+  .kdt-input .q-field--focused .q-field__control {
+    box-shadow: 0 0 0 3px var(--kdt-accent, #C8102E)22;
+  }
+</style>
+"""
+
 
 async def _do_scroll():
     try:
@@ -49,6 +73,7 @@ def _scroll_to_bottom():
 @ui.page("/chat")
 def chat_page():
     frame(current_path="/chat")
+    ui.add_head_html(_CHAT_CSS)
 
     # 관리자 모드는 기수 개념과 무관하게(벡터DB가 기수 구분 없이 통합돼 있음) 항상
     # 챗봇+업로드 화면을 바로 쓸 수 있어야 하므로 기수 선택 여부를 확인하지 않는다.
@@ -79,7 +104,7 @@ def chat_page():
 
     messages: list = app.storage.user.setdefault("chat_messages", [])
     chat_box = ui.column().classes("w-full gap-2")
-    faq_box = ui.row().classes("w-full gap-2 flex-wrap mb-3")
+    faq_box = ui.row().classes("w-full gap-2 flex-wrap mb-3 kdt-stagger")
     input_row = ui.row().classes("w-full items-center gap-2 mt-2")
 
     def _show_faq():
@@ -126,7 +151,7 @@ def chat_page():
             with ui.chat_message(name=LABELS["assistant"]).classes("w-full"):
                 with ui.column().classes("gap-0.5 w-full") as body:
                     content_md = ui.markdown("")
-                    spinner = ui.spinner("dots", size="2em", color="primary")
+                    spinner = ui.html('<div class="kdt-typing"><span></span><span></span><span></span></div>')
         _scroll_to_bottom()
 
         def on_token(token: str):
@@ -170,7 +195,7 @@ def chat_page():
     _show_faq()
 
     with input_row:
-        question_input = ui.input(placeholder="질문을 입력하세요.").classes("flex-grow").on(
+        question_input = ui.input(placeholder="질문을 입력하세요.").classes("flex-grow kdt-input").on(
             "keydown.enter", _submit
         )
         ui.button(icon="send", on_click=_submit).props("round color=primary")
