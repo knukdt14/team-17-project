@@ -47,7 +47,11 @@ def render_login_widget():
                     def _login():
                         if pw.value and pw.value == _admin_password():
                             app.storage.user[_SESSION_KEY] = True
-                            # 관리자 모드의 메인 화면은 챗봇 + 좌측 업로드 패널이라, 로그인한
+                            # 관리자 화면도 같은 /chat, 같은 chat_messages 저장소를 쓰기 때문에
+                            # 로그인 직전까지의 일반 사용자 대화가 그대로 보이면 안 된다 -
+                            # 관리자로 들어가는 시점에 대화 기록을 비운다.
+                            app.storage.user["chat_messages"] = []
+                            # 관리자 모드의 메인 화면은 챗봇 + 업로드 콘솔이라, 로그인한
                             # 페이지가 어디였든 챗봇으로 이동시킨다.
                             ui.navigate.to("/chat")
                         else:

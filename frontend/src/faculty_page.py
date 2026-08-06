@@ -7,7 +7,7 @@ faculty_page.py
 
 from nicegui import ui
 
-from theme import ACCENT, BORDER, INK, MUTED, frame, page_header
+from theme import ACCENT, ACCENT_DARK, BORDER, GOLD, INK, MUTED, frame, page_header
 
 FACULTY = [
     (
@@ -55,31 +55,42 @@ def _initials(name: str) -> str:
 
 def _faculty_card(p: dict):
     with ui.card().classes(
-        "items-center text-center p-8 w-64 transition-all hover:-translate-y-1.5"
+        "items-stretch text-center p-0 w-64 transition-all hover:-translate-y-1.5 overflow-hidden"
     ).style("cursor: default;"):
-        with ui.element("div").classes(
-            "w-24 h-24 rounded-full flex items-center justify-center text-3xl font-extrabold mb-4 mx-auto"
-        ).style(f"background:{ACCENT}; color:#fff;"):
-            ui.label(_initials(p["name"]))
-        ui.label(p["name"]).classes("font-extrabold text-lg").style(f"color:{INK};")
-        ui.label(p["role"]).classes("text-sm mt-0.5").style(f"color:{ACCENT};")
-        ui.element("div").classes("w-8 h-px my-3").style(f"background:{BORDER};")
-        ui.label(p.get("affiliation") or "소속 정보 준비 중").classes("text-xs").style(f"color:{MUTED};")
-        ui.label(p.get("field") or "담당 분야 준비 중").classes("text-xs mt-1").style(f"color:{MUTED};")
-        github = p.get("github")
-        if github:
-            ui.link("GitHub ↗", github, new_tab=True).classes("text-xs mt-3 font-bold").style(
-                f"color:{ACCENT};"
-            )
+        ui.element("div").classes("w-full h-1.5").style(
+            f"background:linear-gradient(90deg,{ACCENT},{GOLD});"
+        )
+        with ui.column().classes("items-center text-center p-8 pt-7 gap-0"):
+            with ui.element("div").classes(
+                "w-24 h-24 rounded-full flex items-center justify-center text-3xl font-extrabold mb-4 mx-auto"
+            ).style(
+                f"background:linear-gradient(135deg,{ACCENT},{ACCENT_DARK}); color:#fff; "
+                f"box-shadow: 0 0 0 3px #fff, 0 0 0 4px {GOLD}80;"
+            ):
+                ui.label(_initials(p["name"]))
+            ui.label(p["name"]).classes("kdt-serif font-extrabold text-lg").style(f"color:{INK};")
+            ui.label(p["role"]).classes(
+                "text-[11px] font-bold mt-1.5 px-2.5 py-0.5 rounded-full"
+            ).style(f"color:{ACCENT}; background:{ACCENT}14;")
+            ui.element("div").classes("w-8 h-px my-3").style(f"background:{BORDER};")
+            ui.label(p.get("affiliation") or "소속 정보 준비 중").classes("text-xs").style(f"color:{MUTED};")
+            ui.label(p.get("field") or "담당 분야 준비 중").classes("text-xs mt-1").style(f"color:{MUTED};")
+            github = p.get("github")
+            if github:
+                ui.link("GitHub ↗", github, new_tab=True).classes(
+                    "text-xs font-bold mt-3 no-underline"
+                ).style(f"color:{ACCENT};")
 
 
 @ui.page("/faculty")
 def faculty_page():
     frame(current_path="/faculty")
-    page_header("groups", "교수진", "사전교육/본교육을 담당하는 교수진을 소개합니다.")
+    page_header("groups", "교수진", "사전교육/본교육을 담당하는 교수진을 소개합니다.", kicker="FACULTY")
 
     for section_title, people in FACULTY:
-        ui.label(section_title).classes("font-extrabold text-base mb-4 mt-2").style(f"color:{ACCENT};")
-        with ui.row().classes("gap-6 flex-wrap mb-8 kdt-stagger"):
+        with ui.row().classes("items-center gap-3 mb-4 mt-2"):
+            ui.label(section_title).classes("font-extrabold text-base").style(f"color:{ACCENT};")
+            ui.element("div").classes("h-px flex-grow").style(f"background:{BORDER};")
+        with ui.row().classes("gap-6 flex-wrap mb-8 kdt-stagger kdt-reveal"):
             for p in people:
                 _faculty_card(p)

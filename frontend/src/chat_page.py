@@ -6,13 +6,14 @@ chat_page.py
 """
 
 import asyncio
+import urllib.parse
 
 from nicegui import app, ui
 
 from api_client import ModelServiceError, ask_stream
 from auth import is_admin
 from sources import render_sources
-from theme import frame, page_header
+from theme import ACCENT, ACCENT_DARK, GOLD, INK, frame, page_header
 
 # 무료/유료 버전 데모 토글 - model이 tier에 따라 solar(무료)/groq_llama(유료)로 답변한다.
 # 과금 로직은 없고 시각적으로만 구분되는 데모용 기능.
@@ -29,6 +30,23 @@ FAQ_QUESTIONS = [
 
 # 이모지 아바타 대신 말풍선 위에 붙는 작은 텍스트 라벨로 - q-chat-message의 name 속성.
 LABELS = {"user": "사용자", "assistant": "AI 어시스턴트"}
+
+
+def _avatar_svg(text: str, color_from: str, color_to: str) -> str:
+    """q-chat-message의 avatar는 이미지 URL만 받아서, 이니셜 배지를 SVG data URI로 만들어 쓴다."""
+    svg = (
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64">'
+        f'<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">'
+        f'<stop offset="0" stop-color="{color_from}"/><stop offset="1" stop-color="{color_to}"/>'
+        f"</linearGradient></defs>"
+        f'<circle cx="32" cy="32" r="32" fill="url(#g)"/>'
+        f'<text x="32" y="40" font-family="Pretendard,Arial,sans-serif" font-size="20" '
+        f'font-weight="800" fill="#fff" text-anchor="middle">{text}</text></svg>'
+    )
+    return "data:image/svg+xml;utf8," + urllib.parse.quote(svg)
+
+
+AVATARS = {"user": _avatar_svg("나", INK, "#3A4256"), "assistant": _avatar_svg("AI", ACCENT, ACCENT_DARK)}
 
 _CHAT_CSS = """
 <style>
@@ -97,6 +115,7 @@ def chat_page():
         "forum",
         "KDT 규정집 챗봇",
         "국민내일배움카드 / KDT 규정집 등 사내 규정에 대해 물어보세요.",
+        kicker="AI CHATBOT",
         right=lambda: ui.toggle(TIER_OPTIONS, value=tier["value"], on_change=_on_tier_change)
         .props("rounded unelevated toggle-color=primary")
         .classes("border"),
@@ -104,26 +123,35 @@ def chat_page():
 
     messages: list = app.storage.user.setdefault("chat_messages", [])
     chat_box = ui.column().classes("w-full gap-2")
-    faq_box = ui.row().classes("w-full gap-2 flex-wrap mb-3 kdt-stagger")
-    input_row = ui.row().classes("w-full items-center gap-2 mt-2")
+    faq_box = ui.column().classes("w-full gap-3 mb-3")
+    input_row = ui.row().classes(
+        "w-full items-center gap-2 mt-3 p-2 pl-4"
+    ).style(f"background:#fff; border:1px solid {GOLD}40; border-radius:999px; box-shadow: var(--kdt-shadow-sm);")
 
     def _show_faq():
         faq_box.clear()
         if messages:
             return
         with faq_box:
-            with ui.row().classes("items-center gap-1.5 w-full"):
-                ui.icon("tips_and_updates", size="16px").classes("text-gray-500")
-                ui.label("자주 묻는 질문").classes("text-sm text-gray-500")
-            for q in FAQ_QUESTIONS:
-                ui.button(q, on_click=lambda q=q: _ask(q)).props("outline no-caps color=primary").classes(
-                    "text-xs normal-case"
-                )
+            with ui.column().classes("w-full gap-3 p-5 kdt-stagger").style(
+                f"background:linear-gradient(160deg,{ACCENT}0d,transparent 65%); "
+                f"border:1px solid {GOLD}30; border-radius:18px;"
+            ):
+                with ui.row().classes("items-center gap-1.5 w-full"):
+                    ui.icon("tips_and_updates", size="16px").style(f"color:{GOLD};")
+                    ui.label("자주 묻는 질문").classes("text-sm font-bold").style(f"color:{INK};")
+                with ui.row().classes("w-full gap-2 flex-wrap"):
+                    for q in FAQ_QUESTIONS:
+                        ui.button(q, icon="chat_bubble_outline", on_click=lambda q=q: _ask(q)).props(
+                            "outline no-caps color=primary"
+                        ).classes("text-xs normal-case")
 
     def _render_history_message(message: dict):
         with chat_box:
             with ui.chat_message(
-                name=LABELS.get(message["role"], ""), sent=(message["role"] == "user")
+                name=LABELS.get(message["role"], ""),
+                avatar=AVATARS.get(message["role"]),
+                sent=(message["role"] == "user"),
             ).classes("w-full"):
                 # q-chat-message는 default slot 안의 자식이 여러 개면 각각을 별도 말풍선으로
                 # 그린다. 답변+출처를 한 말풍선 안에 이어 붙이려면 자식을 하나(이 column)로
@@ -144,13 +172,13 @@ def chat_page():
 
         messages.append({"role": "user", "content": question})
         with chat_box:
-            with ui.chat_message(name=LABELS["user"], sent=True).classes("w-full"):
+            with ui.chat_message(name=LABELS["user"], avatar=AVATARS["user"], sent=True).classes("w-full"):
                 ui.markdown(question)
         _scroll_to_bottom()
 
         answer = {"text": ""}
         with chat_box:
-            with ui.chat_message(name=LABELS["assistant"]).classes("w-full"):
+            with ui.chat_message(name=LABELS["assistant"], avatar=AVATARS["assistant"]).classes("w-full"):
                 with ui.column().classes("gap-0.5 w-full") as body:
                     content_md = ui.markdown("")
                     spinner = ui.html('<div class="kdt-typing"><span></span><span></span><span></span></div>')
@@ -197,7 +225,10 @@ def chat_page():
     _show_faq()
 
     with input_row:
-        question_input = ui.input(placeholder="질문을 입력하세요.").classes("flex-grow kdt-input").on(
-            "keydown.enter", _submit
+        question_input = (
+            ui.input(placeholder="질문을 입력하세요.")
+            .classes("flex-grow kdt-input")
+            .props("borderless")
+            .on("keydown.enter", _submit)
         )
         ui.button(icon="send", on_click=_submit).props("round color=primary")

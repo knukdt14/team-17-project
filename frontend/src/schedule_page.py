@@ -7,7 +7,7 @@ schedule_page.py
 from nicegui import app, ui
 
 from cohorts import get_cohort
-from theme import ACCENT, BORDER, INK, MUTED, frame, page_header
+from theme import ACCENT, ACCENT_DARK, ACCENT_SOFT, BORDER, GOLD, INK, MUTED, frame, page_header
 
 
 @ui.page("/schedule")
@@ -20,7 +20,7 @@ def schedule_page():
         ui.label("먼저 기수를 선택해주세요.").classes("text-gray-500 m-4")
         return
 
-    page_header("event", f"{cohort} 교육 일정", data.get("title", ""))
+    page_header("event", f"{cohort} 교육 일정", data.get("title", ""), kicker="PROGRAM SCHEDULE")
 
     period = data.get("period", {})
     location = data.get("location", {})
@@ -31,43 +31,69 @@ def schedule_page():
         steps.append(("본교육", period.get("정규교육"), location.get("본교육") or location.get("정규교육")))
     steps.append(("수료", "전 과정 이수 후 수료증 발급", None))
 
-    with ui.column().classes("w-full gap-0 mb-2 kdt-fade-up"):
+    with ui.column().classes("w-full gap-0 mb-6 p-6 kdt-fade-up").style(
+        f"background:linear-gradient(160deg,{ACCENT_SOFT},transparent 60%); "
+        f"border:1px solid {BORDER}; border-radius:18px;"
+    ):
         for i, (label, period_text, loc_text) in enumerate(steps):
             is_last = i == len(steps) - 1
             with ui.row().classes("w-full gap-4 items-stretch"):
-                with ui.column().classes("items-center gap-0 w-4"):
-                    ui.element("div").classes("w-3.5 h-3.5 rounded-full mt-1").style(
-                        f"background:{ACCENT};"
-                    )
+                with ui.column().classes("items-center gap-0 w-8"):
+                    with ui.element("div").classes(
+                        "w-8 h-8 rounded-full flex items-center justify-center text-xs font-extrabold"
+                    ).style(
+                        f"background:linear-gradient(135deg,{ACCENT},{ACCENT_DARK}); color:#fff; "
+                        f"box-shadow: 0 0 0 4px #fff, 0 4px 10px rgba(200,16,46,0.25);"
+                    ):
+                        ui.label(str(i + 1))
                     if not is_last:
-                        ui.element("div").classes("w-0.5 flex-grow mt-1").style(f"background:{BORDER};")
-                with ui.column().classes("pb-7 gap-1"):
-                    ui.label(label).classes("font-extrabold text-base").style(f"color:{INK};")
+                        ui.element("div").classes("w-0.5 flex-grow mt-1").style(
+                            f"background:linear-gradient(180deg,{ACCENT}55,{BORDER});"
+                        )
+                with ui.column().classes("pb-8 gap-1"):
+                    ui.label(label).classes("kdt-serif font-extrabold text-lg").style(f"color:{INK};")
                     if period_text:
                         ui.label(period_text).classes("text-sm").style(f"color:{MUTED};")
                     if loc_text:
                         with ui.row().classes("items-center gap-1 flex-nowrap"):
-                            ui.icon("place", size="15px").style(f"color:{MUTED};")
+                            ui.icon("place", size="15px").style(f"color:{GOLD};")
                             ui.label(loc_text).classes("text-sm").style(f"color:{INK};")
 
-    with ui.grid(columns=2).classes("w-full gap-4 kdt-stagger"):
-        with ui.card().classes("p-4"):
-            ui.label("모집 기간").classes("font-bold text-sm mb-1").style(f"color:{ACCENT};")
-            ui.label(data.get("apply_period", "정보 없음")).classes("text-sm").style(f"color:{INK};")
+    with ui.grid(columns=2).classes("w-full gap-4 kdt-stagger kdt-reveal"):
+        with ui.card().classes("p-5"):
+            with ui.row().classes("items-center gap-2 mb-2"):
+                with ui.element("div").classes("w-8 h-8 rounded-lg flex items-center justify-center").style(
+                    f"background:{ACCENT_SOFT};"
+                ):
+                    ui.icon("event_available", size="16px").style(f"color:{ACCENT};")
+                ui.label("모집 기간").classes("font-bold text-sm").style(f"color:{INK};")
+            ui.label(data.get("apply_period", "정보 없음")).classes("text-sm").style(f"color:{MUTED};")
         contact = data.get("contact", {})
         if contact:
-            with ui.card().classes("p-4"):
-                ui.label("교육 문의").classes("font-bold text-sm mb-1").style(f"color:{ACCENT};")
+            with ui.card().classes("p-5"):
+                with ui.row().classes("items-center gap-2 mb-2"):
+                    with ui.element("div").classes(
+                        "w-8 h-8 rounded-lg flex items-center justify-center"
+                    ).style(f"background:{ACCENT_SOFT};"):
+                        ui.icon("support_agent", size="16px").style(f"color:{ACCENT};")
+                    ui.label("교육 문의").classes("font-bold text-sm").style(f"color:{INK};")
                 for k, v in contact.items():
-                    ui.label(f"{k} · {v}").classes("text-sm").style(f"color:{INK};")
+                    ui.label(f"{k} · {v}").classes("text-sm").style(f"color:{MUTED};")
 
     benefits = data.get("benefits", [])
     if benefits:
-        ui.label("참여 혜택").classes("font-extrabold text-base mt-6 mb-2").style(f"color:{INK};")
-        with ui.column().classes("gap-1.5 kdt-fade-up"):
+        with ui.row().classes("items-center gap-3 mt-8 mb-3"):
+            ui.label("참여 혜택").classes("kdt-serif font-extrabold text-lg").style(f"color:{INK};")
+            ui.element("div").classes("h-px flex-grow").style(f"background:{BORDER};")
+        with ui.column().classes("gap-2.5 kdt-reveal"):
             for b in benefits:
-                with ui.row().classes("items-start gap-2 flex-nowrap"):
-                    ui.label("●").classes("text-xs mt-1").style(f"color:{ACCENT};")
+                with ui.row().classes("items-center gap-3 flex-nowrap p-3").style(
+                    f"background:#fff; border:1px solid {BORDER}; border-radius:12px;"
+                ):
+                    with ui.element("div").classes(
+                        "w-6 h-6 min-w-[1.5rem] rounded-full flex items-center justify-center"
+                    ).style(f"background:{ACCENT};"):
+                        ui.icon("check", size="14px").style("color:#fff;")
                     ui.label(b).classes("text-sm flex-grow").style(f"color:{INK};")
 
     ui.separator().classes("my-5")

@@ -14,7 +14,7 @@ from nicegui import app, ui
 
 from auth import is_admin
 from cohorts import COHORT_LIST, get_cohort
-from theme import ACCENT, GOLD, INK, MUTED, frame
+from theme import ACCENT, ACCENT_DARK, GOLD, INK, MUTED, frame
 
 ASSETS_DIR = os.path.join(os.path.dirname(__file__), "..", "assets")
 
@@ -62,8 +62,41 @@ _FLOAT_CSS = f"""
     animation: kdt-fade-up 0.7s cubic-bezier(.2,.7,.2,1) forwards;
   }}
   .kdt-hero > *:nth-child(1) {{ animation-delay: 0.05s; }}
-  .kdt-hero > *:nth-child(2) {{ animation-delay: 0.18s; }}
-  .kdt-hero > *:nth-child(3) {{ animation-delay: 0.30s; }}
+  .kdt-hero > *:nth-child(2) {{ animation-delay: 0.16s; }}
+  .kdt-hero > *:nth-child(3) {{ animation-delay: 0.28s; }}
+  .kdt-hero > *:nth-child(4) {{ animation-delay: 0.40s; }}
+
+  .kdt-highlight-pill {{
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 8px 16px;
+    border-radius: 999px;
+    background: rgba(255,255,255,0.6);
+    border: 1px solid {GOLD}40;
+    box-shadow: 0 4px 14px rgba(27,31,42,0.05);
+    backdrop-filter: blur(6px);
+  }}
+
+  .kdt-card-cta {{
+    opacity: 0;
+    transform: translateY(4px);
+    transition: opacity 0.25s ease, transform 0.25s ease;
+  }}
+  .kdt-float-card:hover .kdt-card-cta {{ opacity: 1; transform: translateY(0); }}
+
+  .kdt-card-index {{
+    font-family: 'Nanum Myeongjo', serif;
+    letter-spacing: 0.12em;
+  }}
+
+  .kdt-logo-badge {{ position: relative; }}
+  .kdt-logo-badge::before {{
+    content: "";
+    position: absolute;
+    inset: -10px;
+    border-radius: 9999px;
+    background: radial-gradient(circle, {ACCENT}26 0%, transparent 70%);
+    z-index: -1;
+  }}
 </style>
 """
 
@@ -100,28 +133,55 @@ def landing():
         "w-full items-center justify-center gap-16 px-4 py-24 relative min-h-[85vh]"
     ).style("z-index:1;"):
         with ui.column().classes("items-center gap-2 text-center kdt-hero"):
-            ui.label("KDT AI·빅데이터 전문가 양성과정").classes("text-3xl font-extrabold").style(f"color:{INK};")
-            ui.label("소속된 기수를 선택해주세요").classes("text-base").style(f"color:{MUTED};")
-            ui.element("div").classes("w-12 h-1 rounded-full mt-2").style(
+            ui.label("KYUNGPOOK NATIONAL UNIVERSITY").classes("kdt-kicker")
+            ui.label("AI·빅데이터 전문가 양성과정").classes("kdt-serif text-4xl md:text-5xl font-extrabold").style(
+                f"color:{INK};"
+            )
+            ui.label("소속된 기수를 선택해주세요").classes("text-base mt-1").style(f"color:{MUTED};")
+            ui.element("div").classes("w-14 h-[3px] rounded-full mt-3").style(
                 f"background:linear-gradient(90deg,{ACCENT},{GOLD});"
             )
+
+        with ui.row().classes("gap-3 flex-wrap justify-center kdt-fade-up").style("animation-delay: 0.5s;"):
+            for icon, text in [
+                ("school", "6개월 심화 실무 과정"),
+                ("payments", "교육비 전액 국비 지원"),
+                ("verified", "경북대학교 수료증 발급"),
+            ]:
+                with ui.row().classes("kdt-highlight-pill items-center"):
+                    ui.icon(icon, size="16px").style(f"color:{ACCENT};")
+                    ui.label(text).classes("text-xs font-bold").style(f"color:{INK};")
 
         # overflow-x-auto만 줘도 CSS 스펙상 overflow-y가 auto로 강제 승격돼서, 카드가
         # 위로 떠오르는 애니메이션의 윗부분이 잘려 보였다. 가로 스크롤 안전장치보다
         # 이 클리핑 버그가 더 커서, overflow 자체를 없애고 카드 폭 축소(min-w-0)로만 방어한다.
         with ui.row().classes("w-full max-w-5xl gap-10 flex-nowrap px-1 justify-center py-4"):
-            for name in COHORT_LIST:
+            for i, name in enumerate(COHORT_LIST):
                 data = get_cohort(name)
                 with ui.card().classes(
-                    "kdt-float-card items-center text-center p-9 flex-1 min-w-0 cursor-pointer"
+                    "kdt-float-card items-stretch text-center p-0 flex-1 min-w-0 cursor-pointer overflow-hidden"
                 ).on("click", lambda name=name: _select(name)):
-                    logo_path = os.path.join(ASSETS_DIR, data["logo"]) if data.get("logo") else None
-                    with ui.element("div").classes(
-                        "w-16 h-16 rounded-2xl flex items-center justify-center text-3xl mb-3 mx-auto overflow-hidden"
-                    ).style(f"background:{ACCENT}14; box-shadow: inset 0 0 0 1px {GOLD}33;"):
-                        if logo_path and os.path.exists(logo_path):
-                            ui.image(logo_path).classes("w-full h-full").props("fit=cover")
-                        else:
-                            ui.label(name[:2]).classes("text-2xl font-extrabold").style(f"color:{ACCENT};")
-                    ui.label(name).classes("font-extrabold text-xl").style(f"color:{INK};")
-                    ui.label(data.get("subtitle", "")).classes("text-sm mt-1").style(f"color:{MUTED};")
+                    with ui.row().classes("w-full items-center justify-between px-4 py-2").style(
+                        f"background:linear-gradient(90deg,{ACCENT},{ACCENT_DARK});"
+                    ):
+                        ui.label(f"{i + 1:02d}").classes("kdt-card-index text-xs font-bold").style(
+                            "color:rgba(255,255,255,0.75);"
+                        )
+                        ui.icon("north_east", size="14px").style("color:rgba(255,255,255,0.75);")
+                    with ui.column().classes("items-center text-center px-9 pt-7 pb-8 gap-0 w-full"):
+                        logo_path = os.path.join(ASSETS_DIR, data["logo"]) if data.get("logo") else None
+                        with ui.element("div").classes("kdt-logo-badge mb-3 mx-auto"):
+                            with ui.element("div").classes(
+                                "w-16 h-16 rounded-2xl flex items-center justify-center text-3xl overflow-hidden"
+                            ).style(f"background:{ACCENT}14; box-shadow: inset 0 0 0 1px {GOLD}33;"):
+                                if logo_path and os.path.exists(logo_path):
+                                    ui.image(logo_path).classes("w-full h-full").props("fit=cover")
+                                else:
+                                    ui.label(name[:2]).classes("text-2xl font-extrabold").style(
+                                        f"color:{ACCENT};"
+                                    )
+                        ui.label(name).classes("kdt-serif font-extrabold text-xl").style(f"color:{INK};")
+                        ui.label(data.get("subtitle", "")).classes("text-sm mt-1").style(f"color:{MUTED};")
+                        with ui.row().classes("kdt-card-cta items-center gap-1 mt-4"):
+                            ui.label("자세히 보기").classes("text-xs font-bold").style(f"color:{ACCENT};")
+                            ui.icon("arrow_forward", size="13px").style(f"color:{ACCENT};")

@@ -50,8 +50,10 @@ def apply_global_style():
     ui.add_head_html(
         f"""
         <link rel="preconnect" href="https://cdn.jsdelivr.net">
+        <link rel="preconnect" href="https://fonts.googleapis.com">
         <style>
           @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css');
+          @import url('https://fonts.googleapis.com/css2?family=Nanum+Myeongjo:wght@400;700;800&display=swap');
 
           :root {{
             --kdt-accent: {ACCENT};
@@ -69,12 +71,35 @@ def apply_global_style():
             font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
           }}
 
+          .kdt-serif {{ font-family: 'Nanum Myeongjo', 'Pretendard', serif !important; }}
+          .kdt-kicker {{
+            display: block;
+            color: {GOLD};
+            font-weight: 800;
+            font-size: 0.72rem;
+            letter-spacing: 0.18em;
+            text-transform: uppercase;
+          }}
+
           body {{
             background: {body_bg} !important;
             background-image:
               radial-gradient(circle at 12% 8%, rgba(200,16,46,0.045) 0%, transparent 45%),
               radial-gradient(circle at 88% 92%, rgba(173,138,59,0.05) 0%, transparent 45%);
             background-attachment: fixed;
+            position: relative;
+          }}
+
+          /* 아주 옅은 그레인 텍스처 - 배경이 밋밋한 단색으로 안 보이게 잡아주는 디테일 */
+          body::before {{
+            content: "";
+            position: fixed;
+            inset: 0;
+            z-index: 1;
+            pointer-events: none;
+            opacity: 0.035;
+            mix-blend-mode: overlay;
+            background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='140' height='140'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
           }}
 
           ::selection {{ background: {ACCENT}; color: #fff; }}
@@ -125,6 +150,10 @@ def apply_global_style():
             box-shadow: var(--kdt-shadow-sm) !important;
             transition: transform 0.28s cubic-bezier(.2,.7,.2,1), box-shadow 0.28s ease, border-color 0.28s ease;
           }}
+          .q-card:hover {{
+            box-shadow: var(--kdt-shadow-md), 0 0 0 1px {GOLD}40 !important;
+            border-color: {GOLD}70 !important;
+          }}
           a.no-underline .q-card, .kdt-hover .q-card {{ will-change: transform; }}
 
           /* ---------- 버튼 ---------- */
@@ -135,7 +164,20 @@ def apply_global_style():
           .q-btn:active {{ transform: scale(0.97); }}
           .q-btn.bg-primary, .q-btn[color=primary] {{
             background: linear-gradient(135deg, {ACCENT} 0%, {ACCENT_DARK} 100%) !important;
+            position: relative;
+            overflow: hidden;
           }}
+          /* 프라이머리 버튼에 은은한 샤인이 한 번 스윽 지나가는 호버 효과 */
+          .q-btn.bg-primary::after, .q-btn[color=primary]::after {{
+            content: "";
+            position: absolute;
+            top: 0; left: -60%;
+            width: 35%; height: 100%;
+            background: linear-gradient(115deg, transparent, rgba(255,255,255,0.4), transparent);
+            transform: skewX(-20deg);
+            transition: left 0.55s ease;
+          }}
+          .q-btn.bg-primary:hover::after, .q-btn[color=primary]:hover::after {{ left: 130%; }}
 
           .q-menu {{
             border-radius: 16px !important;
@@ -192,11 +234,50 @@ def apply_global_style():
             background: linear-gradient(135deg, {ACCENT} 0%, {ACCENT_DARK} 100%) !important;
             box-shadow: 0 6px 16px rgba(200,16,46,0.28);
           }}
+          .kdt-navlink::after {{
+            content: "";
+            position: absolute;
+            left: 50%; bottom: 2px;
+            width: 0; height: 2px;
+            background: {GOLD};
+            transition: width 0.25s ease, left 0.25s ease;
+          }}
+          .kdt-navlink:not(.kdt-navlink-active):hover::after {{ width: 60%; left: 20%; }}
 
           /* ---------- 관리자 콘솔 바 ---------- */
           .kdt-admin-bar {{ animation: kdt-fade-up 0.5s cubic-bezier(.2,.7,.2,1) both; }}
           .kdt-admin-bar .q-field__control {{ background: rgba(255,255,255,0.06) !important; }}
+
+          /* ---------- 스크롤 등장: 화면에 들어올 때 살아나는 요소 ---------- */
+          .kdt-reveal {{
+            opacity: 0;
+            transform: translateY(26px);
+            transition: opacity 0.75s cubic-bezier(.2,.7,.2,1), transform 0.75s cubic-bezier(.2,.7,.2,1);
+          }}
+          .kdt-reveal-in {{ opacity: 1; transform: translateY(0); }}
         </style>
+        <script>
+          document.addEventListener('DOMContentLoaded', function() {{
+            var io = new IntersectionObserver(function(entries) {{
+              entries.forEach(function(entry) {{
+                if (entry.isIntersecting) {{
+                  entry.target.classList.add('kdt-reveal-in');
+                  io.unobserve(entry.target);
+                }}
+              }});
+            }}, {{ threshold: 0.12 }});
+            function scan(root) {{
+              if (!root.querySelectorAll) return;
+              root.querySelectorAll('.kdt-reveal:not(.kdt-reveal-in)').forEach(function(el) {{ io.observe(el); }});
+            }}
+            scan(document);
+            new MutationObserver(function(muts) {{
+              muts.forEach(function(m) {{
+                m.addedNodes.forEach(function(n) {{ if (n.nodeType === 1) scan(n); }});
+              }});
+            }}).observe(document.body, {{ childList: true, subtree: true }});
+          }});
+        </script>
         """
     )
 
@@ -298,10 +379,11 @@ def frame(current_path: str = ""):
         _admin_console_bar()
 
 
-def page_header(icon: str, title: str, subtitle: str = "", *, right=None):
+def page_header(icon: str, title: str, subtitle: str = "", *, kicker: str = "", right=None):
     """오른쪽에 부가 컨트롤(예: 챗봇의 무료/유료 토글)을 같이 놓고 싶을 때는
     right에 그 내용을 그리는 콜백을 넘기면 된다. icon은 이모지가 아니라 Material 아이콘
-    이름(예: "forum", "event", "place", "groups")을 받는다."""
+    이름(예: "forum", "event", "place", "groups")을 받는다. kicker는 제목 위에 붙는
+    골드색 영문 소문구(예: "PROGRAM SCHEDULE")로, 없으면 생략된다."""
     with ui.row().classes("items-center justify-between w-full mb-6 flex-wrap gap-3 kdt-fade-up"):
         with ui.row().classes("items-center gap-3"):
             with ui.element("div").classes(
@@ -312,7 +394,9 @@ def page_header(icon: str, title: str, subtitle: str = "", *, right=None):
             ):
                 ui.icon(icon).style(f"color:{ACCENT}; font-size:1.4rem;")
             with ui.column().classes("gap-0"):
-                ui.label(title).classes("text-2xl font-extrabold").style(f"color:{INK};")
+                if kicker:
+                    ui.label(kicker).classes("kdt-kicker")
+                ui.label(title).classes("kdt-serif text-2xl font-extrabold").style(f"color:{INK};")
                 if subtitle:
                     ui.label(subtitle).classes("text-sm").style(f"color:{MUTED};")
         if right:

@@ -60,7 +60,7 @@ def map_page():
         ui.label("먼저 기수를 선택해주세요.").classes("text-gray-500")
         return
 
-    page_header("place", "오시는길", "")
+    page_header("place", "오시는길", "", kicker="LOCATION")
 
     search_link = f"https://map.kakao.com/link/search/{quote(location)}"
 
@@ -80,7 +80,7 @@ def map_page():
     keyword = _place_keyword(location)
     known_address = _KNOWN_ADDRESSES.get(keyword)
 
-    with ui.card().classes("w-full p-3 kdt-fade-up").style("animation-delay: 0.1s;"):
+    with ui.card().classes("w-full p-3 kdt-reveal"):
         ui.html(
             f"""
             <div id="kdt-map" style="width:100%;height:520px;border-radius:12px;"></div>
