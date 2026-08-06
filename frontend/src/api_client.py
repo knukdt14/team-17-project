@@ -38,6 +38,7 @@ async def ask_stream(
     history: list[dict] | None = None,
     tier: str = "free",
     scope: str = "all",
+    cohort: str | None = None,
 ) -> list[dict]:
     """질문을 model의 /ask(SSE)로 보내고, 토큰이 도착할 때마다 on_token(token)을 호출한다.
     history는 아직 model이 안 받아도 무해하게 무시되므로(Pydantic 기본 동작이 정의 안 된 필드를
@@ -45,10 +46,14 @@ async def ask_stream(
 
     tier: "free"(Solar) 또는 "paid"(Groq Llama) - 무료/유료 버전 데모용 토글값을 그대로 넘긴다.
     scope: "all"(기본 규정집+업로드 전체) 또는 "uploaded"(관리자 테스트용 - 업로드분만 검색).
+    cohort: 현재 선택된 기수(예: "13기"). model이 그 기수의 모집공고만 검색하도록 좁혀서,
+    "본교육 장소가 어디인가요?" 같은 질문에 다른 기수 내용이 섞여 답변되는 걸 막는다.
     """
     payload: dict = {"question": question, "tier": tier, "scope": scope}
     if history:
         payload["history"] = history
+    if cohort:
+        payload["cohort"] = cohort
 
     sources: list = []
     try:

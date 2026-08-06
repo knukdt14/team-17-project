@@ -35,6 +35,33 @@ map_page.py
   main.py의 root_page()가 진짜 페이지 로드 시점에 <head>에 한 번만 선언적으로 붙이는
   방식으로 되돌렸다(예전에 항상 안정적으로 동작하던 방식과 동일). 여기서는 그게 준비될
   때까지 window.kakao.maps.LatLng 존재 여부만 기다린다(waitUntilReady).
+
+- [모드별 배타적 표시] 실제 카카오맵 앱처럼 자동차/대중교통/도보 세 모드 중 항상 하나만
+  지도에 그려진다(currentMode). 세 모드의 kakao.maps.Polyline 객체를 서로 다른 변수/배열
+  (carLines/transitLinesByRoute/walkLine)에 따로 보관해두고, 모드를 바꿀 때는 새로 지도를
+  그리는 게 아니라 이미 만들어둔 Polyline의 setMap(map)/setMap(null)만 토글한다 - 한 번
+  불러온 경로는 다시 API를 호출하지 않고 캐시된 걸 재사용한다(불필요한 재요청/깜빡임 방지).
+  대중교통은 카카오가 환승 조합이 다른 대안 경로를 여러 개 내려줄 수 있어서, 자동차의
+  추천/최소시간/최단거리 선택형 칩과 같은 방식으로 routes[] 전체를 미리 그려두고
+  (transitLinesByRoute[i]) 패널에서 고른 인덱스(transitSelectedIndex)의 것만 보여준다.
+- [자동차 경로 대안 선택] priority=RECOMMEND/TIME/DISTANCE 세 기준을 "추천 경로/최소시간/
+  최단거리"로 라벨링해 선택형 칩으로 제공한다. 이전엔 세 기준을 항상 동시에(옅은 점선으로)
+  겹쳐 그렸는데, 이번 요청으로 "한 번에 하나만" 보이게 바꿨다 - RECOMMEND는 사용자가 검색한
+  직후 바로 그리고, TIME/DISTANCE는 화면엔 안 그린 채 백그라운드로 미리 불러와서(지도에는
+  안 보이지만 거리/시간 정보는 패널에 채워짐) 사용자가 칩을 누르는 순간 바로 전환되게 한다.
+  "무료(톨게이트 회피)" 옵션은 만들지 않았다 - 카카오모빌리티 자동차 길찾기 공식 문서가 JS로
+  렌더링되는 SPA라 자동으로 확인할 수 없었고, 다른 경로(devtalk 검색)로도 avoid/toll 관련
+  파라미터의 정확한 이름을 확인하지 못했다. 검증 안 된 파라미터를 임의로 붙이면 카카오 API가
+  조용히 무시하거나 에러를 낼 수 있어서, 이미 실제로 동작이 확인된 세 기준만 제공한다.
+- [도보 모드] 카카오맵 API(2026-07-21 신설) 도보 경로 조회를 새 백엔드 엔드포인트
+  (/api/walking, directions.py)로 프록시해서 쓴다. 자동차/대중교통과는 별도 기능이라 이게
+  실패해도 다른 모드에는 전혀 영향이 없다.
+- [우측 경로 패널] 지도를 flex 컨테이너(#kdt-map-layout)로 감싸서 왼쪽엔 지도
+  (#kdt-map-wrap, flex:1), 오른쪽엔 경로 옵션 패널(#kdt-side-panel, 고정 폭)을 둔다.
+  패널은 출발지 검색 전에는 display:none이라 지도가 이전처럼 꽉 차게 보이고, 경로를 찾은
+  순간부터만 나타난다. #kdt-map에 이미 붙어있는 ResizeObserver가 패널이 나타나며 지도 폭이
+  줄어드는 것도 자동으로 감지해서 map.relayout()을 호출해주기 때문에, 패널 표시/숨김 로직에
+  별도의 relayout 호출을 추가하지 않아도 된다.
 """
 
 import json
@@ -79,13 +106,20 @@ def map_page():
         ui.label("먼저 기수를 선택해주세요.").classes("text-gray-500")
         return
 
-    page_header("place", "오시는길", "", kicker="LOCATION")
-
     search_link = f"https://map.kakao.com/link/search/{quote(location)}"
 
-    with ui.card().classes("w-full p-5 mb-4 kdt-fade-up"):
-        ui.label(cohort).classes("text-xs font-bold").style(f"color:{ACCENT};")
-        ui.label(location).classes("text-lg font-extrabold mt-0.5").style(f"color:{INK};")
+    def _location_badge():
+        # 예전엔 이 카드가 헤더 아래 별도 줄(w-full)로 있어서 지도를 보려면 스크롤을 한 번
+        # 더 내려야 했다. page_header의 right 슬롯에 넣어 제목과 같은 줄에 나란히 배치하면
+        # 세로 스크롤이 줄어든다. flex-grow로 제목 옆 남은 공간을 채우도록 키워서(化면이
+        # 넓을 때 박스가 훨씬 커 보이게) 글자 크기도 그에 맞춰 키웠다.
+        with ui.card().classes("px-8 py-6 kdt-fade-up flex-grow"):
+            ui.label(cohort).classes("text-lg font-bold").style(f"color:{ACCENT};")
+            ui.label(location).classes("text-4xl font-extrabold mt-1 whitespace-nowrap").style(f"color:{INK};")
+
+    # compact_right=True: justify-between을 쓰면 화면이 넓을 때 제목과 장소 카드 사이
+    # 공백이 너무 커 보인다는 피드백을 받아, 제목 옆에 적당한 간격만 두고 붙인다.
+    page_header("place", "오시는길", "", kicker="LOCATION", right=_location_badge, compact_right=True)
 
     if not KAKAO_JS_KEY:
         ui.label("지도 미리보기는 KAKAO_JS_KEY가 설정되면 표시됩니다. 지금은 길찾기 링크만 이용해주세요.").classes(
@@ -117,24 +151,44 @@ def map_page():
             ui.button("경로 찾기", icon="directions", on_click=_find_route_from_text).props(
                 "no-caps unelevated color=primary"
             )
-        ui.button(
-            "내 위치 자동으로 사용",
-            icon="my_location",
-            on_click=lambda: ui.run_javascript(
-                "window.kdtRouteFromGeolocation && window.kdtRouteFromGeolocation();"
-            ),
-        ).props("flat no-caps dense").classes("mt-1 text-xs px-0").style(f"color:{MUTED};")
+        # 검색하면 여러 후보(예: "동대구역"의 역 본체/1호선/대경선/주차장 등)가 나올 수 있는데,
+        # 이 리스트에 후보들을 카드로 보여주면 사용자가 원하는 걸 직접 골라서 바로 경로를 볼 수
+        # 있다 - 자동 시도 동작 자체는 그대로 두고, 추가 선택지로만 얹는다
+        # (JS의 renderCandidates()가 채운다).
+        ui.html('<div id="kdt-candidates" style="display:none;"></div>').classes("w-full")
+        with ui.row().classes("items-center gap-4 mt-1 flex-wrap"):
+            ui.button(
+                "내 위치 자동으로 사용",
+                icon="my_location",
+                on_click=lambda: ui.run_javascript(
+                    "window.kdtRouteFromGeolocation && window.kdtRouteFromGeolocation();"
+                ),
+            ).props("flat no-caps dense").classes("text-xs px-0").style(f"color:{MUTED};")
+            ui.button(
+                "대중교통으로 보기",
+                icon="directions_transit",
+                on_click=lambda: ui.run_javascript("window.kdtShowTransit && window.kdtShowTransit();"),
+            ).props("flat no-caps dense").classes("text-xs px-0").style(f"color:{MUTED};")
 
     with ui.card().classes("w-full p-3 kdt-reveal"):
         # 카드(w-full)는 flex 컨테이너라서, ui.html()이 만드는 wrapper div도 명시적으로
         # w-full을 안 주면 flex item 기본 동작(shrink-to-fit)으로 폭이 0에 수렴한다.
         # 그러면 안의 #kdt-map(style width:100%)도 "0의 100%"라 결국 0폭이 되고, 카카오맵이
         # 그 순간의 컨테이너 크기를 기준으로 지도를 만들어서 화면 왼쪽 일부에만 좁게 그려진다.
+        # #kdt-map-layout(flex row) 안에 지도(flex:1, 대부분의 폭)와 경로 패널(고정 폭,
+        # 경로가 있을 때만 보임)을 나란히 둔다.
         ui.html(
             f"""
-            <div id="kdt-map" style="width:100%;height:520px;border-radius:12px;"></div>
-            <div id="kdt-route-info" style="display:none;margin-top:12px;padding:10px 14px;
-                 border-radius:10px;font-size:0.85rem;font-weight:700;"></div>
+            <div id="kdt-map-layout" style="display:flex;gap:12px;align-items:flex-start;width:100%;">
+              <div id="kdt-map-wrap" style="flex:1 1 0%;min-width:0;">
+                <div id="kdt-map" style="width:100%;height:520px;border-radius:12px;"></div>
+                <div id="kdt-route-info" style="display:none;margin-top:12px;padding:10px 14px;
+                     border-radius:10px;font-size:0.85rem;font-weight:700;"></div>
+              </div>
+              <div id="kdt-side-panel" style="display:none;flex:0 0 auto;width:22%;min-width:200px;
+                   max-width:280px;border:1px solid #eee;border-radius:12px;padding:12px;
+                   background:#fafafa;box-sizing:border-box;"></div>
+            </div>
             """
         ).classes("w-full")
         with ui.row().classes("items-center gap-3 mt-3 flex-nowrap"):
@@ -161,6 +215,11 @@ def map_page():
             var fullAddress = {json.dumps(location)};
             var knownAddress = {json.dumps(known_address)};
             var routeColor = {json.dumps(ACCENT)};
+            var walkColor = "#16A34A";
+            // 경로 선택 칩/요약 문구의 글자색 - 배경/테두리는 선택 상태를 보여주기 위해
+            // routeColor(포인트 컬러)를 계속 쓰지만, 글자 자체는 가독성 때문에 검은 계열로
+            // 바꿔달라는 피드백을 받아 텍스트 전용 색을 따로 둔다.
+            var textColor = {json.dumps(INK)};
 
             // initMap()이 끝나야 채워지는 것들 - 그 전에 버튼이 눌리면 "아직 준비 중" 안내로 막는다.
             var map = null;
@@ -169,10 +228,52 @@ def map_page():
             var destLatG = null;
             var destLngG = null;
             var myLocationOverlay = null;
-            var routeLine = null;
+
+            // "출발지에서 경로 보기"에 마지막으로 쓴 출발지 좌표 - 모드를 바꿔도(자동차 -> 대중교통
+            // 등) 같은 출발지를 그대로 쓴다.
+            var lastOriginLat = null;
+            var lastOriginLng = null;
+
+            // 모드별 상태 - 세 모드 중 항상 하나만(currentMode) 지도에 그려진다. 이미 불러온 데이터는
+            // Polyline 객체/거리·시간 정보로 캐시해두고, 모드를 바꿀 때 재요청하지 않고 재사용한다.
+            var currentMode = null; // null | 'car' | 'transit' | 'walk'
+
+            var carLines = {{ RECOMMEND: null, TIME: null, DISTANCE: null }};
+            var carPaths = {{ RECOMMEND: null, TIME: null, DISTANCE: null }};
+            var carData  = {{ RECOMMEND: null, TIME: null, DISTANCE: null }};
+            var carPending = {{ RECOMMEND: false, TIME: false, DISTANCE: false }};
+            var carFailed  = {{ RECOMMEND: false, TIME: false, DISTANCE: false }};
+            // 실패했을 때 보여줄 안내 문구 - priority별로 다르게(특히 RECOMMEND는 더 구체적인
+            // 안내를 준다) 기억해뒀다가 패널에서 그대로 보여준다.
+            var carErrorMsg = {{ RECOMMEND: '', TIME: '', DISTANCE: '' }};
+            var carSelected = 'RECOMMEND';
+            var carPriorityLabel = {{ RECOMMEND: '추천 경로', TIME: '최소시간', DISTANCE: '최단거리' }};
+
+            // 카카오맵 API가 대중교통 경로를 여러 개(환승 조합이 다른 대안들) 내려줄 수 있어서,
+            // 자동차 모드처럼 "여러 옵션 중에 선택" 방식으로 바꿨다. routes[]를 통째로 저장해두고,
+            // 옵션별로 Polyline 배열을 따로 만들어서(transitLinesByRoute[i]) 선택된 옵션의
+            // 배열만 지도에 보이게 한다.
+            var transitRoutes = [];
+            var transitLinesByRoute = [];
+            var transitSelectedIndex = 0;
+            var transitPending = false;
+            var transitFailed = false;
+            var transitFailMsg = '';
+
+            var walkLine = null;
+            var walkData = null;
+            var walkPending = false;
+            var walkFailed = false;
+            var walkFailMsg = '';
 
             function showError(container, msg) {{
               container.innerHTML = "<p style='padding:16px;color:#c0392b;font-size:0.85rem;'>" + msg + "</p>";
+            }}
+
+            function escapeHtml(s) {{
+              return String(s == null ? '' : s).replace(/[&<>"']/g, function(ch) {{
+                return {{ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }}[ch];
+              }});
             }}
 
             function setRouteInfo(text, visible, isError) {{
@@ -186,7 +287,8 @@ def map_page():
 
             // 구글맵 스타일의 "내 위치" 파란 점 - 목적지 핀과 모양이 완전히 달라서
             // 지도 위에서 어느 게 내 위치고 어느 게 목적지인지 헷갈리지 않는다.
-            // 다시 검색할 때마다 이전 점은 지우고 새로 찍는다.
+            // 다시 검색할 때마다 이전 점은 지우고 새로 찍는다. 모드를 바꿔도 출발지는 그대로라
+            // 이 점은 지우지 않는다(모드별 clear 로직과 무관).
             function placeMyLocationDot(lat, lng) {{
               if (myLocationOverlay) {{
                 myLocationOverlay.setMap(null);
@@ -204,24 +306,351 @@ def map_page():
               }});
             }}
 
-            // 출발지 좌표가 정해지면(수동 입력이든 위치 자동감지든) 여기서 공통으로 경로를
-            // 조회해서 그린다. 다시 호출되면 이전 경로선은 지우고 새로 그린다.
-            // onFail이 주어지면(=검색 결과 후보가 더 있을 때) "경로 자체를 못 찾음" 실패 시
-            // 바로 에러 메시지를 띄우지 않고 onFail을 불러서 다음 후보를 시도할 기회를 준다.
-            function startRouteFromCoords(originLat, originLng, onFail) {{
+            function originDestPoints() {{
+              var pts = [];
+              if (lastOriginLat !== null) pts.push(new kakao.maps.LatLng(lastOriginLat, lastOriginLng));
+              if (destLatG !== null) pts.push(new kakao.maps.LatLng(destLatG, destLngG));
+              return pts;
+            }}
+
+            // NiceGUI처럼 지도 컨테이너 크기가 나중에 바뀌는(반응형 레이아웃, 패널 표시/숨김)
+            // 환경에서는 카카오맵이 내부에 캐싱해둔 픽셀 크기가 실제 DOM 크기와 어긋나서
+            // setBounds/좌표 계산이 엉뚱한 곳으로 튈 수 있다. relayout()으로 크기를 다시 맞춘
+            // 다음 자동맞춤(setBounds)을 호출하면 해결된다.
+            function fitBoundsToPath(path, extraPoints) {{
+              if (!map || !path || path.length === 0) return;
+              var bounds = new kakao.maps.LatLngBounds();
+              path.forEach(function(p) {{ bounds.extend(p); }});
+              (extraPoints || []).forEach(function(p) {{ bounds.extend(p); }});
+              map.relayout();
+              map.setBounds(bounds, 60, 60, 60, 60);
+            }}
+
+            function hideAllModeLines() {{
+              ['RECOMMEND', 'TIME', 'DISTANCE'].forEach(function(p) {{
+                if (carLines[p]) carLines[p].setMap(null);
+              }});
+              transitLinesByRoute.forEach(function(arr) {{ arr.forEach(function(line) {{ line.setMap(null); }}); }});
+              if (walkLine) walkLine.setMap(null);
+            }}
+
+            // 검색 카드 목록에서 하나를 클릭하면(map_page.py의 유일한 선택 경로 - 자동 선택은
+            // 없다) 목록이 그대로 남아있으면 화면이 복잡해 보인다는 피드백을 받아 바로 접는다.
+            function hideCandidates() {{
+              var box = document.getElementById('kdt-candidates');
+              if (box) {{
+                box.style.display = 'none';
+                box.innerHTML = '';
+              }}
+            }}
+
+            // ---------- 검색 후보 카드 (요청 #1) ----------
+            function formatDistanceMeters(distanceStr) {{
+              var meters = parseInt(distanceStr, 10);
+              if (!meters || isNaN(meters)) return '';
+              if (meters < 1000) return meters + 'm';
+              return (meters / 1000).toFixed(1) + 'km';
+            }}
+
+            function categoryBadge(categoryName) {{
+              if (!categoryName) return '';
+              var parts = categoryName.split('>').map(function(s) {{ return s.trim(); }}).filter(Boolean);
+              return parts.length ? parts[parts.length - 1] : '';
+            }}
+
+            // keywordSearch 결과를 카드 목록으로 보여준다 - 자동으로 아무 후보나 골라 바로
+            // 경로를 그리지 않고, 사용자가 직접 카드를 클릭해야만 경로 계산이 시작된다.
+            // 실제 카카오맵 앱 검색 결과처럼 이름/카테고리 배지/거리/주소를 함께 보여준다.
+            // NiceGUI의 ui.html() 살균 처리를 거치지 않고(=onclick 안 씹힘) 여기서 직접
+            // DOM을 만들고 addEventListener를 붙이는 순수 JS라 문제 없다.
+            function renderCandidates(candidates) {{
+              var box = document.getElementById('kdt-candidates');
+              if (!box) return;
+              if (!candidates || candidates.length === 0) {{
+                box.style.display = 'none';
+                box.innerHTML = '';
+                return;
+              }}
+              var html = '<div style="font-size:0.75rem;font-weight:700;margin:6px 0 6px;color:' + routeColor + ';">검색 결과 - 원하는 위치를 골라주세요</div>';
+              html += '<div style="display:flex;flex-direction:column;gap:6px;">';
+              candidates.slice(0, 6).forEach(function(c, idx) {{
+                var addr = c.road_address_name || c.address_name || '';
+                var badge = categoryBadge(c.category_name);
+                var distText = formatDistanceMeters(c.distance);
+                html += '<button type="button" data-idx="' + idx + '" style="' +
+                  'display:flex;flex-direction:column;align-items:flex-start;gap:3px;text-align:left;' +
+                  'border:1px solid ' + routeColor + '33;background:#fff;border-radius:12px;' +
+                  'padding:9px 12px;cursor:pointer;width:100%;">' +
+                  '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;width:100%;">' +
+                  '<span style="font-size:0.85rem;font-weight:800;color:#191919;">' + escapeHtml(c.place_name || '이름 없음') + '</span>' +
+                  (badge ? '<span style="font-size:0.65rem;font-weight:700;color:' + routeColor + ';background:' + routeColor + '14;border-radius:999px;padding:2px 8px;">' + escapeHtml(badge) + '</span>' : '') +
+                  (distText ? '<span style="font-size:0.7rem;font-weight:700;color:#6B7280;margin-left:auto;">' + distText + '</span>' : '') +
+                  '</div>' +
+                  (addr ? '<div style="font-size:0.72rem;color:#6B7280;">' + escapeHtml(addr) + '</div>' : '') +
+                  '</button>';
+              }});
+              html += '</div>';
+              box.innerHTML = html;
+              box.style.display = 'block';
+              box.querySelectorAll('button[data-idx]').forEach(function(btn) {{
+                btn.addEventListener('click', function() {{
+                  var c = candidates[parseInt(btn.getAttribute('data-idx'), 10)];
+                  // 직접 골랐다는 건 의사가 분명한 행동이니 클릭 즉시 목록을 접는다. 이
+                  // 후보로 도로 경로를 못 찾으면(no_route) 목록을 다시 보여줘서 다른 후보를
+                  // 고를 수 있게 한다 - 완전히 처음부터 다시 검색하지 않아도 되게.
+                  hideCandidates();
+                  loadRoutesForOrigin(parseFloat(c.y), parseFloat(c.x), function() {{
+                    renderCandidates(candidates);
+                  }});
+                }});
+              }});
+            }}
+
+            // ---------- 우측 경로 옵션 패널 + 모드 버튼 + 자동차 대안 선택 ----------
+            // 자동차/대중교통/도보 버튼은 각 모드가 지도에 그려질 때 쓰는 색(routeColor/파랑/초록)을
+            // 그대로 써서, 버튼 색만 봐도 지금 어떤 색 경로가 그려질지 바로 연상되게 한다.
+            var modeColors = {{ car: routeColor, transit: '#2563EB', walk: walkColor }};
+
+            function modeButtonHtml(mode, label) {{
+              var active = currentMode === mode;
+              var c = modeColors[mode];
+              return '<button type="button" data-mode="' + mode + '" style="' +
+                'flex:1;padding:11px 6px;border-radius:10px;font-size:0.92rem;font-weight:800;cursor:pointer;' +
+                'border:1.5px solid ' + (active ? c : c + '40') + ';' +
+                'background:' + (active ? c : '#fff') + ';' +
+                'color:' + (active ? '#fff' : c) + ';">' + label + '</button>';
+            }}
+
+            function priorityChipHtml(priority) {{
+              var selected = carSelected === priority;
+              var text = carPriorityLabel[priority];
+              var d = carData[priority];
+              if (d && d.distance_m != null) {{
+                var km = (d.distance_m / 1000).toFixed(1);
+                var min = Math.round((d.duration_s || 0) / 60);
+                text += ' · ' + km + 'km · ' + min + '분';
+              }} else if (carPending[priority]) {{
+                text += ' · 불러오는 중...';
+              }} else if (carFailed[priority]) {{
+                text += ' · 경로 없음';
+              }}
+              return '<button type="button" data-priority="' + priority + '" style="' +
+                'display:block;width:100%;text-align:left;margin-bottom:6px;padding:8px 10px;' +
+                'border-radius:10px;font-size:0.75rem;font-weight:700;cursor:pointer;' +
+                'border:1px solid ' + (selected ? routeColor : routeColor + '33') + ';' +
+                'background:' + (selected ? routeColor + '14' : '#fff') + ';color:' + textColor + ';">' +
+                escapeHtml(text) + '</button>';
+            }}
+
+            function renderSidePanel() {{
+              var panel = document.getElementById('kdt-side-panel');
+              if (!panel) return;
+              if (!currentMode) {{
+                panel.style.display = 'none';
+                panel.innerHTML = '';
+                return;
+              }}
+              panel.style.display = 'block';
+
+              var html = '<div style="display:flex;gap:4px;margin-bottom:10px;">';
+              html += modeButtonHtml('car', '자동차');
+              html += modeButtonHtml('transit', '대중교통');
+              html += modeButtonHtml('walk', '도보');
+              html += '</div>';
+
+              if (currentMode === 'car') {{
+                // 예전엔 이 요약 문구(거리·시간)가 지도 아래 별도 박스에 나왔는데, 경로 선택
+                // 패널이 그것만으로는 너무 비어 보인다는 피드백을 받아 패널 안으로 옮겼다.
+                // 글자 크기도 처음엔 작았는데("도보 약 32.7km" 같은 문구가 잘 안 보인다는
+                // 피드백) 요약 문구는 패널에서 가장 눈에 띄어야 하는 정보라 1rem으로 키웠다.
+                var selData = carData[carSelected];
+                if (selData && selData.distance_m != null) {{
+                  var selKm = (selData.distance_m / 1000).toFixed(1);
+                  var selMin = Math.round((selData.duration_s || 0) / 60);
+                  html += '<div style="font-size:1rem;font-weight:800;color:' + textColor + ';margin-bottom:3px;">입력하신 위치에서 약 ' + selKm + 'km · ' + selMin + '분</div>';
+                  html += '<div style="font-size:0.74rem;color:#6B7280;margin-bottom:14px;">교통상황에 따라 달라질 수 있어요</div>';
+                }} else if (carFailed[carSelected]) {{
+                  html += '<div style="font-size:0.85rem;font-weight:700;color:#c0392b;margin-bottom:14px;">' + escapeHtml(carErrorMsg[carSelected] || '경로를 찾을 수 없습니다.') + '</div>';
+                }} else {{
+                  html += '<div style="font-size:0.85rem;color:#6B7280;margin-bottom:14px;">경로 계산 중...</div>';
+                }}
+                html += '<div style="font-size:0.75rem;font-weight:700;color:#6B7280;margin-bottom:6px;">경로 선택</div>';
+                html += priorityChipHtml('RECOMMEND');
+                html += priorityChipHtml('TIME');
+                html += priorityChipHtml('DISTANCE');
+              }} else if (currentMode === 'transit') {{
+                if (transitPending) {{
+                  html += '<div style="font-size:0.85rem;color:#6B7280;">대중교통 경로 찾는 중...</div>';
+                }} else if (transitFailed) {{
+                  html += '<div style="font-size:0.85rem;color:#c0392b;">' + escapeHtml(transitFailMsg || '대중교통 경로를 찾을 수 없습니다.') + '</div>';
+                }} else if (transitRoutes.length > 0) {{
+                  // 카카오맵 앱처럼 대중교통도 여러 경로 후보 중 하나를 고를 수 있게 - 각 옵션을
+                  // "N분 · 환승 M회" 칩으로 보여주고, 고른 옵션의 상세(요금/구간)만 아래에 펼친다.
+                  html += '<div style="font-size:0.75rem;font-weight:700;color:#6B7280;margin-bottom:6px;">경로 선택</div>';
+                  transitRoutes.forEach(function(route, idx) {{
+                    var selected = idx === transitSelectedIndex;
+                    var rMin = Math.round((route.duration_s || 0) / 60);
+                    var rLabel = '경로 ' + (idx + 1) + ' · ' + rMin + '분 · 환승 ' + (route.transfers || 0) + '회';
+                    html += '<button type="button" data-transit-idx="' + idx + '" style="' +
+                      'display:block;width:100%;text-align:left;margin-bottom:6px;padding:8px 10px;' +
+                      'border-radius:10px;font-size:0.8rem;font-weight:700;cursor:pointer;' +
+                      'border:1px solid ' + (selected ? routeColor : routeColor + '33') + ';' +
+                      'background:' + (selected ? routeColor + '14' : '#fff') + ';color:' + textColor + ';">' +
+                      escapeHtml(rLabel) + '</button>';
+                  }});
+
+                  var route = transitRoutes[transitSelectedIndex];
+                  var km = ((route.distance_m || 0) / 1000).toFixed(1);
+                  var totalMin = Math.round((route.duration_s || 0) / 60);
+                  var fareText = route.fare != null ? ' · 약 ' + route.fare.toLocaleString() + '원' : '';
+                  html += '<div style="font-size:1rem;font-weight:800;color:' + textColor + ';margin:10px 0 8px;">' +
+                    km + 'km · ' + totalMin + '분 · 환승 ' + (route.transfers || 0) + '회' + fareText + '</div>';
+                  (route.steps || []).forEach(function(step) {{
+                    var stColor = step.is_transit ? '#2563EB' : '#9CA3AF';
+                    var min = Math.round((step.duration_s || 0) / 60);
+                    var label = step.is_transit
+                      ? (((step.vehicle_type || '') + ' ' + (step.vehicle_name || '')).trim() || '대중교통')
+                      : '도보';
+                    html += '<div style="display:flex;align-items:center;gap:6px;padding:4px 0;font-size:0.78rem;">' +
+                      '<span style="width:8px;height:8px;border-radius:50%;background:' + stColor + ';flex:0 0 auto;"></span>' +
+                      '<span style="font-weight:700;">' + escapeHtml(label) + '</span>' +
+                      (min > 0 ? '<span style="color:#6B7280;">' + min + '분</span>' : '') +
+                      '</div>';
+                  }});
+                }} else {{
+                  html += '<div style="font-size:0.85rem;color:#6B7280;">대중교통 경로를 불러오는 중입니다...</div>';
+                }}
+              }} else if (currentMode === 'walk') {{
+                if (walkPending) {{
+                  html += '<div style="font-size:0.85rem;color:#6B7280;">도보 경로 찾는 중...</div>';
+                }} else if (walkFailed) {{
+                  html += '<div style="font-size:0.85rem;color:#c0392b;">' + escapeHtml(walkFailMsg || '도보 경로를 찾을 수 없습니다.') + '</div>';
+                }} else if (walkData) {{
+                  var wkm = ((walkData.distance_m || 0) / 1000).toFixed(1);
+                  var wmin = Math.round((walkData.duration_s || 0) / 60);
+                  html += '<div style="font-size:1rem;font-weight:800;color:' + walkColor + ';">도보 약 ' + wkm + 'km · ' + wmin + '분</div>';
+                }} else {{
+                  html += '<div style="font-size:0.85rem;color:#6B7280;">도보 경로를 불러오는 중입니다...</div>';
+                }}
+              }}
+
+              panel.innerHTML = html;
+              panel.querySelectorAll('button[data-mode]').forEach(function(btn) {{
+                btn.addEventListener('click', function() {{ switchMode(btn.getAttribute('data-mode')); }});
+              }});
+              panel.querySelectorAll('button[data-priority]').forEach(function(btn) {{
+                btn.addEventListener('click', function() {{ selectCarPriority(btn.getAttribute('data-priority')); }});
+              }});
+              panel.querySelectorAll('button[data-transit-idx]').forEach(function(btn) {{
+                btn.addEventListener('click', function() {{ selectTransitRoute(parseInt(btn.getAttribute('data-transit-idx'), 10)); }});
+              }});
+            }}
+
+            function selectCarPriority(priority) {{
+              if (currentMode !== 'car' || carSelected === priority) return;
+              if (carLines[carSelected]) carLines[carSelected].setMap(null);
+              carSelected = priority;
+              if (carLines[priority]) {{
+                carLines[priority].setMap(map);
+                fitBoundsToPath(carPaths[priority], originDestPoints());
+              }}
+              renderSidePanel();
+            }}
+
+            // 대중교통 경로 후보(transitRoutes) 중 하나를 고르면, 그 후보의 Polyline만 지도에
+            // 남기고 나머지 후보들은 숨긴다 - 이미 다 그려서 캐시해뒀기 때문에 재요청 없이
+            // 즉시 전환된다.
+            function selectTransitRoute(idx) {{
+              if (currentMode !== 'transit' || idx === transitSelectedIndex || !transitLinesByRoute[idx]) return;
+              (transitLinesByRoute[transitSelectedIndex] || []).forEach(function(line) {{ line.setMap(null); }});
+              transitSelectedIndex = idx;
+              var pts = [];
+              transitLinesByRoute[idx].forEach(function(line) {{
+                line.setMap(map);
+                pts = pts.concat(line.getPath());
+              }});
+              if (pts.length > 0) fitBoundsToPath(pts, originDestPoints());
+              renderSidePanel();
+            }}
+
+            // 메인 경로(추천 기준) 조회에 성공한 뒤, 다른 두 기준(최소시간/최단거리)은
+            // 백그라운드로 미리 불러온다. 화면에는 안 그리고(선택되기 전까지 setMap(null)),
+            // 패널에 거리/시간 정보만 채워서 사용자가 칩을 누르는 즉시 바로 보여줄 수 있게 한다.
+            // 실패해도 메인 경로 표시에는 전혀 영향이 없다.
+            function fetchCarPriorityBackground(priority, originLat, originLng) {{
+              carPending[priority] = true;
+              if (currentMode === 'car') renderSidePanel();
+              var originParam = originLng + "," + originLat;
+              var destParam = destLngG + "," + destLatG;
+              var url = "/api/directions?origin=" + encodeURIComponent(originParam)
+                      + "&destination=" + encodeURIComponent(destParam)
+                      + "&priority=" + priority;
+              fetch(url).then(function(res) {{ return res.ok ? res.json() : null; }}).then(function(data) {{
+                carPending[priority] = false;
+                if (!data || !data.path || data.path.length === 0) {{
+                  carFailed[priority] = true;
+                  carErrorMsg[priority] = "이 기준으로는 경로를 찾을 수 없습니다.";
+                  if (currentMode === 'car') renderSidePanel();
+                  return;
+                }}
+                var linePath = data.path.map(function(p) {{ return new kakao.maps.LatLng(p[1], p[0]); }});
+                carLines[priority] = new kakao.maps.Polyline({{
+                  map: (currentMode === 'car' && carSelected === priority) ? map : null,
+                  path: linePath,
+                  strokeWeight: 5,
+                  strokeColor: routeColor,
+                  strokeOpacity: 0.85,
+                  strokeStyle: "solid"
+                }});
+                carPaths[priority] = linePath;
+                carData[priority] = {{ distance_m: data.distance_m, duration_s: data.duration_s }};
+                if (currentMode === 'car') renderSidePanel();
+              }}).catch(function() {{
+                carPending[priority] = false;
+                carFailed[priority] = true;
+                carErrorMsg[priority] = "이 기준으로는 경로를 찾을 수 없습니다.";
+                if (currentMode === 'car') renderSidePanel();
+              }});
+            }}
+
+            // 출발지 좌표가 정해지면(후보 카드 클릭, 주소 검색 성공, 위치 자동감지) 여기서 새
+            // 경로 조회를 시작한다. 완전히 새로운 출발지 검색이므로 이전 세 모드의 결과를 모두
+            // 초기화하고 자동차 모드부터 다시 시작한다. onFail이 주어지면(=후보 카드를 클릭한
+            // 경우) "경로 자체를 못 찾음"(no_route) 실패 시 바로 에러 메시지만 띄우지 않고
+            // onFail을 불러서 다른 후보를 다시 고를 수 있게 한다.
+            function loadRoutesForOrigin(originLat, originLng, onFail) {{
               if (!map || destLatG === null) {{
                 setRouteInfo("지도가 아직 준비 중입니다. 잠시 후 다시 시도해주세요.", true, true);
                 return;
               }}
 
+              lastOriginLat = originLat;
+              lastOriginLng = originLng;
+
+              hideAllModeLines();
+              ['RECOMMEND', 'TIME', 'DISTANCE'].forEach(function(p) {{
+                carLines[p] = null; carPaths[p] = null; carData[p] = null;
+                carPending[p] = false; carFailed[p] = false;
+              }});
+              transitRoutes = []; transitLinesByRoute = []; transitSelectedIndex = 0;
+              transitPending = false; transitFailed = false; transitFailMsg = '';
+              walkLine = null; walkData = null; walkPending = false; walkFailed = false; walkFailMsg = '';
+              carSelected = 'RECOMMEND';
+              currentMode = 'car';
+
               placeMyLocationDot(originLat, originLng);
-              setRouteInfo("경로 계산 중...", true, false);
+              // 로딩/거리/에러 안내는 이제 지도 아래가 아니라 우측 패널 쪽에서 보여준다
+              // (currentMode가 이미 'car'이므로 renderSidePanel()이 "경로 계산 중..."을 그려준다).
+              setRouteInfo("", false, false);
+              renderSidePanel();
 
               var originParam = originLng + "," + originLat;
               var destParam = destLngG + "," + destLatG;
               var url = "/api/directions?origin=" + encodeURIComponent(originParam)
-                      + "&destination=" + encodeURIComponent(destParam);
+                      + "&destination=" + encodeURIComponent(destParam)
+                      + "&priority=RECOMMEND";
 
+              carPending.RECOMMEND = true;
               fetch(url).then(function(res) {{
                 return res.json().then(function(body) {{
                   if (!res.ok) {{
@@ -232,20 +661,17 @@ def map_page():
                   return body;
                 }});
               }}).then(function(data) {{
+                carPending.RECOMMEND = false;
                 if (!data.path || data.path.length === 0) {{
                   if (onFail) {{ onFail(); return; }}
-                  setRouteInfo("경로를 찾을 수 없습니다. 길찾기 버튼으로 이용해주세요.", true, true);
+                  carFailed.RECOMMEND = true;
+                  carErrorMsg.RECOMMEND = "경로를 찾을 수 없습니다. 길찾기 버튼으로 이용해주세요.";
+                  renderSidePanel();
                   return;
                 }}
 
-                var linePath = data.path.map(function(p) {{
-                  return new kakao.maps.LatLng(p[1], p[0]);
-                }});
-
-                if (routeLine) {{
-                  routeLine.setMap(null);
-                }}
-                routeLine = new kakao.maps.Polyline({{
+                var linePath = data.path.map(function(p) {{ return new kakao.maps.LatLng(p[1], p[0]); }});
+                carLines.RECOMMEND = new kakao.maps.Polyline({{
                   map: map,
                   path: linePath,
                   strokeWeight: 5,
@@ -253,61 +679,30 @@ def map_page():
                   strokeOpacity: 0.85,
                   strokeStyle: "solid"
                 }});
+                carPaths.RECOMMEND = linePath;
+                carData.RECOMMEND = {{ distance_m: data.distance_m, duration_s: data.duration_s }};
 
-                // NiceGUI처럼 지도 컨테이너 크기가 생성 이후에 바뀌는(반응형 레이아웃) 환경에서는
-                // 카카오맵이 내부에 캐싱해둔 픽셀 크기가 실제 DOM 크기와 어긋나서 setBounds/좌표
-                // 계산이 엉뚱한 곳으로 튀는 게 잘 알려진 증상이다. relayout()으로 크기를 다시
-                // 맞춰준 다음 자동맞춤(setBounds)을 호출하면 해결된다. 직접 줌레벨을 계산하는
-                // 방식은 거리별로 미세조정이 계속 필요해서(1차 시도 때 너무 확대돼 버림) 대신
-                // 카카오 SDK가 알아서 모든 좌표가 화면에 들어오게 계산해주는 setBounds를 쓴다.
-                map.relayout();
+                fitBoundsToPath(linePath, originDestPoints());
+                // 후보 카드를 클릭한 경우 이미 클릭 시점에 hideCandidates()가 실행됐으니
+                // 여기서는 아무 효과가 없다(멱등) - 혹시 모를 다른 진입 경로를 위한 안전망.
+                hideCandidates();
+                renderSidePanel();
 
-                var bounds = new kakao.maps.LatLngBounds();
-                bounds.extend(new kakao.maps.LatLng(originLat, originLng));
-                bounds.extend(new kakao.maps.LatLng(destLatG, destLngG));
-                linePath.forEach(function(p) {{ bounds.extend(p); }});
-                // 패딩 없이 setBounds만 쓰면 출발/도착 마커가 지도 테두리에 딱 붙어서 잘려
-                // 보일 수 있어서, 네 방향에 여백을 좀 준다.
-                map.setBounds(bounds, 60, 60, 60, 60);
-
-                var distanceKm = (data.distance_m || 0) / 1000;
-                if (data.distance_m) {{
-                  var km = distanceKm.toFixed(1);
-                  var min = Math.round((data.duration_s || 0) / 60);
-                  setRouteInfo("입력하신 위치에서 약 " + km + "km · " + min + "분 (교통상황에 따라 달라질 수 있어요)", true, false);
-                }} else {{
-                  setRouteInfo("", false, false);
-                }}
+                fetchCarPriorityBackground('TIME', originLat, originLng);
+                fetchCarPriorityBackground('DISTANCE', originLat, originLng);
               }}).catch(function(err) {{
-                // "경로 자체를 못 찾음"(no_route)이고 시도할 다음 후보가 있으면 그쪽으로 넘긴다.
+                carPending.RECOMMEND = false;
                 var detail = err && err.body && err.body.detail;
                 var isNoRoute = detail && typeof detail === "object" && detail.reason === "no_route";
                 if (isNoRoute && onFail) {{
                   onFail();
                   return;
                 }}
-                var msg = isNoRoute
+                carFailed.RECOMMEND = true;
+                carErrorMsg.RECOMMEND = isNoRoute
                   ? "이 출발지 주변에서 차로 갈 수 있는 경로를 찾지 못했어요. 더 구체적인 위치(예: 정확한 출입구, 인근 도로명)로 다시 입력해보시거나, 길찾기 버튼을 이용해주세요."
                   : "경로를 불러오지 못했습니다. 카카오맵 앱으로 길찾기 버튼을 이용해주세요.";
-                setRouteInfo(msg, true, true);
-              }});
-            }}
-
-            // POI 검색 결과가 여러 개일 때, 1등 후보가 도로 탐색 실패로 막히면 다음 후보로
-            // 순서대로 재시도한다. 큰 시설(역/터미널 등)은 대표 좌표가 건물 한가운데로 잡혀서
-            // 차량 진입 도로에 안 붙는 경우가 흔한데, 같은 검색의 다른 후보(주차장/입구 등)는
-            // 도로에 붙어있는 경우가 많아서 이렇게 하면 실사용에서 성공률이 꽤 올라간다.
-            function tryOriginCandidates(candidates, idx) {{
-              if (idx >= candidates.length) {{
-                setRouteInfo(
-                  "이 위치 주변에서 차로 갈 수 있는 경로를 찾지 못했어요. 더 구체적인 위치(예: 정확한 출입구, 인근 도로명)로 다시 입력해보시거나, 길찾기 버튼을 이용해주세요.",
-                  true, true
-                );
-                return;
-              }}
-              var candidate = candidates[idx];
-              startRouteFromCoords(parseFloat(candidate.y), parseFloat(candidate.x), function() {{
-                tryOriginCandidates(candidates, idx + 1);
+                renderSidePanel();
               }});
             }}
 
@@ -319,13 +714,15 @@ def map_page():
               }}
               setRouteInfo("내 위치 확인 중...", true, false);
               navigator.geolocation.getCurrentPosition(function(pos) {{
-                startRouteFromCoords(pos.coords.latitude, pos.coords.longitude);
+                loadRoutesForOrigin(pos.coords.latitude, pos.coords.longitude);
               }}, function() {{
                 setRouteInfo("위치 권한이 거부됐거나 가져오지 못했습니다. 출발지를 직접 입력해주세요.", true, true);
               }}, {{ timeout: 8000 }});
             }};
 
             // 출발지 텍스트 입력 - keywordSearch(POI) 먼저, 실패하면 주소 검색으로 폴백.
+            // 목적지 좌표가 이미 잡혀있으면(destLatG/destLngG) 그 위치를 기준 좌표로 넘겨서
+            // 카카오가 각 후보의 목적지까지의 거리(distance)를 같이 내려주게 한다(검색 카드에 표시).
             window.kdtRouteFromText = function(text) {{
               if (!map || !places || !geocoder) {{
                 setRouteInfo("지도가 아직 준비 중입니다. 잠시 후 다시 시도해주세요.", true, true);
@@ -333,15 +730,25 @@ def map_page():
               }}
               setRouteInfo("\\"" + text + "\\" 위치 찾는 중...", true, false);
 
+              var searchOptions = (destLatG !== null && destLngG !== null)
+                ? {{ location: new kakao.maps.LatLng(destLatG, destLngG) }}
+                : undefined;
+
               places.keywordSearch(text, function(data, status) {{
                 if (status === kakao.maps.services.Status.OK && data.length > 0) {{
-                  // 최대 4개 후보까지만 순서대로 시도 (그 이상은 실사용에서 큰 의미 없이 느려지기만 함)
-                  tryOriginCandidates(data.slice(0, 4), 0);
+                  // 여러 후보가 나올 수 있는 검색어(예: "동대구역"의 역 본체/1호선/대경선/
+                  // 주차장 등)라서, 카카오가 1등으로 준 결과를 바로 경로에 쓰지 않고 후보
+                  // 카드로 보여준 뒤 사용자가 직접 하나를 클릭해야만 경로를 계산한다 - 자동으로
+                  // 아무 후보나 골라서 바로 경로를 그리면 사용자가 원치 않는 위치로 경로가
+                  // 잡히는 경우가 많다는 피드백을 받아 자동 선택 로직을 없앴다.
+                  setRouteInfo("", false, false);
+                  renderCandidates(data);
                   return;
                 }}
+                renderCandidates([]);
                 geocoder.addressSearch(text, function(result, gStatus) {{
                   if (gStatus === kakao.maps.services.Status.OK) {{
-                    startRouteFromCoords(parseFloat(result[0].y), parseFloat(result[0].x));
+                    loadRoutesForOrigin(parseFloat(result[0].y), parseFloat(result[0].x));
                   }} else {{
                     setRouteInfo(
                       "입력하신 위치를 찾지 못했습니다. 더 구체적으로 입력해보세요 (예: 'OO역', 'OO구 OO동').",
@@ -349,7 +756,191 @@ def map_page():
                     );
                   }}
                 }});
+              }}, searchOptions);
+            }};
+
+            // ---------- 대중교통 모드 ----------
+            // 도보/탑승 두 가지로만 색을 나눈다 - 카카오 공식 문서가 vehicles[].type을
+            // "BUS"/"SUBWAY"라고 적어놓은 스키마 표와, 실제로 "마을"(한국어 버스 서브타입)을
+            // 보여주는 샘플 응답이 서로 안 맞아서, 그 값으로 버스/지하철 색을 따로 나누면
+            // 잘못 분류될 위험이 크다(예: 전부 도보 취급). 대신 백엔드(directions.py)가 내려주는
+            // is_transit(그 구간에 vehicles가 있었는지)만 신뢰하고, 실제 버스/지하철 이름은
+            // 패널에 라벨 텍스트로 정확히 보여준다.
+            var transitStepStyle = {{
+              WALK:    {{ color: "#9CA3AF", weight: 4, style: "shortdot" }},
+              TRANSIT: {{ color: "#2563EB", weight: 5, style: "solid" }}
+            }};
+
+            function loadTransit() {{
+              transitPending = true;
+              transitFailed = false;
+              renderSidePanel();
+
+              var originParam = lastOriginLng + "," + lastOriginLat;
+              var destParam = destLngG + "," + destLatG;
+              var url = "/api/transit?origin=" + encodeURIComponent(originParam)
+                      + "&destination=" + encodeURIComponent(destParam);
+
+              fetch(url).then(function(res) {{
+                return res.json().then(function(body) {{
+                  if (!res.ok) {{
+                    var err = new Error("transit request failed");
+                    err.body = body;
+                    throw err;
+                  }}
+                  return body;
+                }});
+              }}).then(function(data) {{
+                transitPending = false;
+                // 카카오가 환승 조합이 다른 대안을 꽤 많이(때로는 10개 이상) 내려줄 수 있는데,
+                // 그만큼 다 보여주면 고르기 오히려 번거롭다는 피드백을 받아 상위 3개까지만 쓴다.
+                var routes = (data.routes || []).slice(0, 3);
+                if (routes.length === 0) {{
+                  transitFailed = true;
+                  transitFailMsg = "대중교통 경로를 찾을 수 없습니다.";
+                  renderSidePanel();
+                  return;
+                }}
+
+                // 카카오맵 API가 환승 조합이 다른 대안 경로를 여러 개 내려줄 수 있어서, 모두
+                // 미리 그려두고(화면에는 첫 번째만 보이게) 사용자가 패널에서 고르면 즉시
+                // 전환되게 한다 - 재요청 없이 setMap()만 토글.
+                transitLinesByRoute = routes.map(function(route, idx) {{
+                  return (route.steps || []).reduce(function(arr, step) {{
+                    var style = step.is_transit ? transitStepStyle.TRANSIT : transitStepStyle.WALK;
+                    var path = (step.path || []).map(function(p) {{ return new kakao.maps.LatLng(p[1], p[0]); }});
+                    if (path.length > 1) {{
+                      arr.push(new kakao.maps.Polyline({{
+                        map: (currentMode === 'transit' && idx === 0) ? map : null,
+                        path: path,
+                        strokeWeight: style.weight,
+                        strokeColor: style.color,
+                        strokeOpacity: 0.85,
+                        strokeStyle: style.style
+                      }}));
+                    }}
+                    return arr;
+                  }}, []);
+                }});
+                transitRoutes = routes;
+                transitSelectedIndex = 0;
+
+                if (currentMode === 'transit') {{
+                  var boundsPts = [];
+                  transitLinesByRoute[0].forEach(function(line) {{ boundsPts = boundsPts.concat(line.getPath()); }});
+                  if (boundsPts.length > 0) fitBoundsToPath(boundsPts, originDestPoints());
+                }}
+                renderSidePanel();
+              }}).catch(function(err) {{
+                transitPending = false;
+                transitFailed = true;
+                var detail = err && err.body && err.body.detail;
+                transitFailMsg = (detail && typeof detail === "object") ? (detail.result_msg || "대중교통 경로를 불러오지 못했습니다.")
+                  : (typeof detail === "string" ? detail : "대중교통 경로를 불러오지 못했습니다.");
+                renderSidePanel();
               }});
+            }}
+
+            // ---------- 도보 모드 ----------
+            function loadWalk() {{
+              walkPending = true;
+              walkFailed = false;
+              renderSidePanel();
+
+              var originParam = lastOriginLng + "," + lastOriginLat;
+              var destParam = destLngG + "," + destLatG;
+              var url = "/api/walking?origin=" + encodeURIComponent(originParam)
+                      + "&destination=" + encodeURIComponent(destParam);
+
+              fetch(url).then(function(res) {{
+                return res.json().then(function(body) {{
+                  if (!res.ok) {{
+                    var err = new Error("walking request failed");
+                    err.body = body;
+                    throw err;
+                  }}
+                  return body;
+                }});
+              }}).then(function(data) {{
+                walkPending = false;
+                if (!data.path || data.path.length === 0) {{
+                  walkFailed = true;
+                  walkFailMsg = "도보 경로를 찾을 수 없습니다.";
+                  renderSidePanel();
+                  return;
+                }}
+                var linePath = data.path.map(function(p) {{ return new kakao.maps.LatLng(p[1], p[0]); }});
+                if (walkLine) walkLine.setMap(null);
+                walkLine = new kakao.maps.Polyline({{
+                  map: currentMode === 'walk' ? map : null,
+                  path: linePath,
+                  strokeWeight: 5,
+                  strokeColor: walkColor,
+                  strokeOpacity: 0.85,
+                  strokeStyle: "shortdot"
+                }});
+                walkData = {{ distance_m: data.distance_m, duration_s: data.duration_s }};
+                if (currentMode === 'walk') {{
+                  fitBoundsToPath(linePath, originDestPoints());
+                }}
+                renderSidePanel();
+              }}).catch(function(err) {{
+                walkPending = false;
+                walkFailed = true;
+                var detail = err && err.body && err.body.detail;
+                walkFailMsg = (detail && typeof detail === "object") ? (detail.result_msg || "도보 경로를 불러오지 못했습니다.")
+                  : (typeof detail === "string" ? detail : "도보 경로를 불러오지 못했습니다.");
+                renderSidePanel();
+              }});
+            }}
+
+            // 세 모드 버튼(자동차/대중교통/도보) 공용 전환 함수. 이미 불러온 모드는 재요청 없이
+            // 캐시된 Polyline만 다시 보여주고, 처음 보는 모드면 그때 API를 호출한다.
+            function switchMode(mode) {{
+              if (lastOriginLat === null || destLatG === null) {{
+                setRouteInfo("먼저 출발지를 입력해서 경로를 한 번 찾아주세요.", true, true);
+                return;
+              }}
+              if (mode === currentMode) return;
+
+              hideAllModeLines();
+              currentMode = mode;
+              // 로딩/거리/에러 안내는 패널이 currentMode/carSelected 상태를 보고 그려주므로
+              // 지도 아래 박스는 모드를 바꿀 때마다 비워둔다.
+              setRouteInfo("", false, false);
+
+              if (mode === 'car') {{
+                if (carLines[carSelected]) {{
+                  carLines[carSelected].setMap(map);
+                  fitBoundsToPath(carPaths[carSelected], originDestPoints());
+                }}
+              }} else if (mode === 'transit') {{
+                if (transitRoutes.length > 0) {{
+                  var pts = [];
+                  (transitLinesByRoute[transitSelectedIndex] || []).forEach(function(line) {{
+                    line.setMap(map);
+                    pts = pts.concat(line.getPath());
+                  }});
+                  if (pts.length > 0) fitBoundsToPath(pts, originDestPoints());
+                }} else if (!transitPending) {{
+                  loadTransit();
+                }}
+              }} else if (mode === 'walk') {{
+                if (walkLine) {{
+                  walkLine.setMap(map);
+                  fitBoundsToPath(walkLine.getPath(), originDestPoints());
+                }} else if (!walkPending) {{
+                  loadWalk();
+                }}
+              }}
+
+              renderSidePanel();
+            }}
+
+            // 기존 "대중교통으로 보기" 버튼과의 호환을 위한 얇은 래퍼 - switchMode('transit')로
+            // 그대로 연결한다(버튼 자체는 그대로 두되, 동작은 새 모드 전환 로직을 탄다).
+            window.kdtShowTransit = function() {{
+              switchMode('transit');
             }};
 
             // 두 가지가 다 준비돼야 지도를 만들 수 있다:
@@ -391,7 +982,7 @@ def map_page():
                 var center = new kakao.maps.LatLng(35.8714, 128.6014);
                 map = new kakao.maps.Map(container, {{ center: center, level: 4 }});
 
-                // waitUntilReady에서 크기를 확인하고 들어왔어도, 이후에 사이드바 열림/닫힘,
+                // waitUntilReady에서 크기를 확인하고 들어왔어도, 이후에 사이드 패널 표시/숨김,
                 // 창 크기 변경, 폰트 로딩 등으로 컨테이너 크기가 또 바뀔 수 있다. 그때마다
                 // 자동으로 relayout해서 카카오맵이 기억하는 크기가 항상 실제 화면과 맞도록
                 // 감시해둔다 (구형 브라우저 대비 ResizeObserver 미지원 시 window resize로 대체).

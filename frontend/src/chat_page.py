@@ -115,7 +115,6 @@ _SCROLL_JS = """
 })()
 """
 
-
 # 관리자 테스트용 챗봇은 페이지 전체가 아니라 작은 박스 하나 안에서 스크롤되므로,
 # window/문서 스크롤이 아니라 그 박스(.kdt-mini-chat-scroll) 자신의 scrollTop만 움직인다.
 _MINI_SCROLL_JS = """
@@ -126,10 +125,57 @@ _MINI_SCROLL_JS = """
   }
   requestAnimationFrame(function() { requestAnimationFrame(kdtScrollMini); });
   // 마크다운/폰트 로딩 등으로 두 번의 rAF 이후에도 높이가 살짝 바뀔 수 있어
-  // 150ms 뒤에 한 번 더 보정한다(_do_scroll의 페이지 전체 버전과 동일한 이유).
+  // 150ms 뒤에 한 번 더 보정한다.
   setTimeout(kdtScrollMini, 150);
 })()
 """
+
+
+def _make_scroll_to_bottom(client, js_code: str):
+    """세션(클라이언트)마다 독립된 스크롤 함수를 만들어 반환한다. 일반 챗봇과 관리자용
+    미니 챗봇이 각자 다른 js_code(_SCROLL_JS / _MINI_SCROLL_JS)로 이 팩토리를 호출해서 쓴다.
+
+    NiceGUI의 ui.run_javascript()는 내부적으로 "현재 슬롯 스택"에서 클라이언트를 찾는데
+    (nicegui.context.Context.client -> self.slot.parent.client), 이 슬롯 스택은
+    asyncio 태스크 id별로 관리된다(nicegui.slot.Slot.stacks). on_token 콜백 안에서
+    asyncio.create_task()로 스크롤을 fire-and-forget하면, 새로 만들어진 태스크는 슬롯
+    스택이 아예 없는 "빈 태스크"라서 "The current slot cannot be determined ..."
+    RuntimeError가 나고(콜백이 예외를 삼켜서 조용히 무시됨) - 이게 "답변은 계속
+    아래로 늘어나는데 화면은 안 움직이는" 버그의 진짜 원인이었다. 슬롯 스택을 거치는
+    ui.run_javascript() 대신, 페이지가 처음 그려질 때(슬롯이 확실히 있는 시점) 미리
+    받아둔 client 객체로 client.run_javascript()를 직접 호출하면 슬롯 스택과 무관하게
+    항상 정확한 클라이언트로 보낼 수 있다.
+
+    ui.run_javascript()는 브라우저 응답을 기다리는 진짜 왕복 요청이라, on_token마다
+    (빠른 스트리밍이면 초당 수십~수백 번) 매번 새로 보내면 응답을 기다리는 요청이 쌓여
+    스크롤이 텍스트 렌더링을 못 따라갈 수 있다. 이미 보낸 요청이 안 끝났으면 새로 보내지
+    않고 "그사이에 갱신이 더 있었다"는 표시만 남겨서, 끝나는 대로 최신 상태로 딱 한 번만
+    더 보낸다(trailing throttle)."""
+    state = {"busy": False, "wanted": False}
+
+    async def _do_scroll():
+        try:
+            await client.run_javascript(js_code)
+        except Exception:
+            pass
+
+    async def _run_one():
+        state["busy"] = True
+        try:
+            await _do_scroll()
+        finally:
+            state["busy"] = False
+            if state["wanted"]:
+                state["wanted"] = False
+                asyncio.create_task(_run_one())
+
+    def _scroll_to_bottom():
+        if state["busy"]:
+            state["wanted"] = True
+            return
+        asyncio.create_task(_run_one())
+
+    return _scroll_to_bottom
 
 
 def _build_mini_test_chat():
@@ -138,6 +184,10 @@ def _build_mini_test_chat():
     영역(스크롤)과 입력창까지 다 들어있다. 검색 범위는 항상 scope="uploaded"(관리자가
     업로드한 파일만) 고정. 업로드 패널의 "추천 질문" 버튼이 바로 호출할 수 있도록
     _ask 함수를 반환한다."""
+    # 슬롯 컨텍스트가 확실히 유효한 지금(위젯을 처음 그리는) 시점에 client를 미리 받아둔다
+    # (이유는 _make_scroll_to_bottom의 docstring 참고).
+    _scroll_mini_to_bottom = _make_scroll_to_bottom(ui.context.client, _MINI_SCROLL_JS)
+
     tier = {"value": app.storage.user.get("llm_tier", "free")}
     messages: list = app.storage.user.setdefault("chat_messages", [])
 
@@ -180,21 +230,6 @@ def _build_mini_test_chat():
                 .on("keydown.enter", lambda: _submit())
             )
             ui.button(icon="send", on_click=lambda: _submit()).props("round dense flat color=primary")
-
-    async def _do_mini_scroll():
-        try:
-            # ui.run_javascript()는 "현재 슬롯"(어떤 client/페이지에 보낼지)이 필요한데,
-            # asyncio.create_task()로 띄운 새 task는 그 슬롯 스택을 물려받지 못해
-            # RuntimeError("slot stack ... is empty")가 나며 조용히 실패했었다(추천 질문을
-            # 누르거나 답변이 와도 스크롤이 전혀 안 되던 원인). with chat_box:로 이 task
-            # 안에서 슬롯을 명시적으로 다시 잡아준다.
-            with chat_box:
-                await ui.run_javascript(_MINI_SCROLL_JS)
-        except Exception:
-            pass
-
-    def _scroll_mini_to_bottom():
-        asyncio.create_task(_do_mini_scroll())
 
     def _render_history_message(message: dict):
         with chat_box:
@@ -508,6 +543,11 @@ def chat_page():
         _admin_manager()
         return
 
+    # 세션(클라이언트)마다 독립된 스로틀 상태를 가져야 하므로 페이지 진입 시마다 새로 만든다.
+    # 슬롯 컨텍스트가 확실히 유효한 지금 시점에 client를 미리 받아둔다(이유는
+    # _make_scroll_to_bottom의 docstring 참고).
+    _scroll_to_bottom = _make_scroll_to_bottom(ui.context.client, _SCROLL_JS)
+
     tier = {"value": app.storage.user.get("llm_tier", "free")}
 
     def _on_tier_change(e):
@@ -538,30 +578,6 @@ def chat_page():
     input_row = ui.row().classes(
         "kdt-composer-fixed items-center gap-2 p-2 pl-4"
     ).style(f"background:#fff; border:1px solid {GOLD}40; border-radius:999px; box-shadow: var(--kdt-shadow-md);")
-
-    async def _do_scroll():
-        try:
-            # scrollHeight를 직접 계산하는 대신 맨 아래 앵커 엘리먼트를 scrollIntoView로
-            # 스크롤한다 - 실제로 스크롤되는 요소가 window인지 다른 컨테이너인지 몰라도 항상
-            # 맞는 곳을 스크롤해준다. NiceGUI가 새 메시지를 DOM에 그려 넣기 전에 스크롤하면
-            # 옛 레이아웃 기준으로 계산돼서 새 메시지가 화면 밖에 남는 문제가 있었어서, 두 번의
-            # requestAnimationFrame으로 레이아웃이 확정된 다음 스크롤하고, 마크다운/폰트 로딩 등으로
-            # 그 이후에도 높이가 살짝 바뀔 수 있어 150ms 뒤에 한 번 더 보정한다.
-            #
-            # with chat_box:로 슬롯을 다시 잡아주는 이유는 _build_mini_test_chat의
-            # _do_mini_scroll 주석 참고 - asyncio.create_task()로 띄운 task는 슬롯 스택을
-            # 물려받지 못해 그냥 두면 ui.run_javascript()가 RuntimeError로 조용히 실패한다.
-            with chat_box:
-                await ui.run_javascript(_SCROLL_JS)
-        except Exception:
-            pass
-
-    def _scroll_to_bottom():
-        # ui.run_javascript()가 반환하는 AwaitableResponse는 진짜 코루틴이 아니라서
-        # asyncio.create_task()에 그대로 넘기면 TypeError가 난다(실제로 이 버그 때문에
-        # 질문을 보내면 사용자 말풍선만 뜨고 답변이 통째로 멈췄었음). async 래퍼로 한 번
-        # 감싸서 진짜 코루틴을 넘기고, 동기 콜백(on_token) 안에서도 fire-and-forget으로 쓴다.
-        asyncio.create_task(_do_scroll())
 
     def _show_faq():
         faq_box.clear()
@@ -634,7 +650,13 @@ def chat_page():
         is_error = False
         sources: list = []
         try:
-            sources = await ask_stream(question, on_token, tier=tier["value"], scope="all")
+            sources = await ask_stream(
+                question,
+                on_token,
+                tier=tier["value"],
+                scope="all",
+                cohort=app.storage.user.get("selected_cohort"),
+            )
         except ModelServiceError as e:
             answer["text"] = str(e)
             is_error = True
