@@ -2,8 +2,8 @@
 faculty_page.py
 - 원장/본부장/연구원 등 운영진과, 사전교육/본교육을 담당하는 교수진을 함께 보여준다.
   "교수진"이라는 이름만으로는 운영진까지 아우르지 못해서 탭 이름/제목을 "운영진"으로 바꿨다.
-- 사전교육/본교육 담당 교수는 예전엔 섹션을 나눠서 두 줄로 보여줬는데, 한 줄에 같이
-  보이도록 "교수진" 한 섹션으로 합치고 담당 단계는 역할 뱃지 문구(예: "사전교육 교수")로 구분한다.
+- 위쪽 줄에는 운영진 3명, 아래쪽 줄에는 사전교육(조현일 교수 1명)과 본교육(3명)을 나란히
+  이어 붙여 한 줄에 4명이 보이게 한다. 각 그룹 위에 작은 라벨(kdt-kicker)을 붙여 구분한다.
 - 사진이 없어서 이니셜 배지로 대신한다. 남성은 파란 계열, 그 외에는 브랜드 레드 계열로
   배지 색을 구분한다. 프로그램 전체 공통 정보라 기수별로 나누지 않는다.
 - 소속/담당 분야는 정확한 정보를 받기 전까지 임의로 채워둔 placeholder다.
@@ -21,39 +21,46 @@ BLUE_DARK = "#1E3D82"
 # 아바타 배지 색을 파란 계열로 보여줄 이름(남성).
 MALE_NAMES = {"정태옥", "조현일", "김기석", "배준현"}
 
-FACULTY = [
+ADMIN_GROUP = (
+    "운영진",
+    [
+        {
+            "name": "정태옥",
+            "role": "원장",
+            "affiliation": "경북대학교 데이터융복합연구원",
+            "field": "교육과정 총괄",
+        },
+        {
+            "name": "류승령",
+            "role": "본부장",
+            "affiliation": "경북대학교 데이터융복합연구원",
+            "field": "교육운영 총괄",
+        },
+        {
+            "name": "김효진",
+            "role": "연구원",
+            "affiliation": "경북대학교 데이터융복합연구원",
+            "field": "교육기획 및 운영지원",
+        },
+    ],
+)
+
+PROFESSOR_GROUPS = [
     (
-        "운영진",
-        [
-            {
-                "name": "정태옥",
-                "role": "원장",
-                "affiliation": "경북대학교 데이터융복합연구원",
-                "field": "교육과정 총괄",
-            },
-            {
-                "name": "류승령",
-                "role": "본부장",
-                "affiliation": "경북대학교 데이터융복합연구원",
-                "field": "교육운영 총괄",
-            },
-            {
-                "name": "김효진",
-                "role": "연구원",
-                "affiliation": "경북대학교 데이터융복합연구원",
-                "field": "교육기획 및 운영지원",
-            },
-        ],
-    ),
-    (
-        "교수진",
+        "사전교육",
         [
             {
                 "name": "조현일",
                 "role": "사전교육 교수",
                 "affiliation": "AI·빅데이터 교육",
                 "field": "프로그래밍 기초 및 데이터 분석",
+                "github": "https://github.com/himzei",
             },
+        ],
+    ),
+    (
+        "본교육",
+        [
             {
                 "name": "김소현",
                 "role": "본교육 교수",
@@ -114,15 +121,29 @@ def _faculty_card(p: dict):
                 ).style(f"color:{badge_color};")
 
 
+def _group_label(text: str):
+    ui.label(text).classes("kdt-kicker mb-3")
+
+
 def faculty_page():
     page_header("groups", "운영진", "교육을 이끌어가는 운영진과 교수진을 소개합니다.", kicker="TEAM")
 
-    with ui.row().classes("gap-6 flex-wrap items-stretch mb-8 kdt-stagger kdt-reveal"):
-        for i, (_section_title, people) in enumerate(FACULTY):
-            if i > 0:
-                # 운영진과 교수진 그룹을 한 줄에 이어 붙이되, 얇은 세로 구분선으로 경계만 표시한다.
-                ui.element("div").classes("w-px self-stretch mx-1 hidden sm:block").style(
-                    f"background:{BORDER};"
-                )
-            for p in people:
-                _faculty_card(p)
+    with ui.column().classes("gap-8 mb-8 kdt-stagger kdt-reveal"):
+        with ui.column().classes("items-start"):
+            _group_label(ADMIN_GROUP[0])
+            with ui.row().classes("gap-6 flex-wrap items-stretch"):
+                for p in ADMIN_GROUP[1]:
+                    _faculty_card(p)
+
+        with ui.row().classes("gap-6 flex-wrap items-start"):
+            for i, (group_title, people) in enumerate(PROFESSOR_GROUPS):
+                if i > 0:
+                    # 사전교육/본교육 그룹을 한 줄에 이어 붙이되, 얇은 세로 구분선으로 경계만 표시한다.
+                    ui.element("div").classes("w-px self-stretch mx-1 hidden sm:block mt-8").style(
+                        f"background:{BORDER};"
+                    )
+                with ui.column().classes("items-start"):
+                    _group_label(group_title)
+                    with ui.row().classes("gap-6 flex-wrap items-stretch"):
+                        for p in people:
+                            _faculty_card(p)
