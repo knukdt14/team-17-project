@@ -179,7 +179,13 @@ def landing():
                                 "w-16 h-16 rounded-2xl flex items-center justify-center text-3xl overflow-hidden"
                             ).style(f"background:{ACCENT}14; box-shadow: inset 0 0 0 1px {GOLD}33;"):
                                 if logo_path and os.path.exists(logo_path):
-                                    ui.image(logo_path).classes("w-full h-full").props("fit=cover")
+                                    # 파일시스템 경로 대신 /assets 정적 마운트 URL로 넘긴다 - ui.image()에
+                                    # 로컬 경로를 그대로 주면 호출마다 동적 라우트를 새로 등록하는데,
+                                    # main.py의 캐치올 페이지 라우트가 그보다 먼저 등록돼 있어서 그 뒤에
+                                    # 추가되는 동적 라우트가 전부 가려져(404) 로고가 깨지는 문제가 있었다.
+                                    ui.image(f"/assets/{data['logo']}").classes("w-full h-full").props(
+                                        "fit=cover"
+                                    )
                                 else:
                                     ui.label(name[:2]).classes("text-2xl font-extrabold").style(
                                         f"color:{ACCENT};"

@@ -29,6 +29,17 @@ from cohorts import COHORT_LIST, get_cohort
 ASSETS_DIR = os.path.join(os.path.dirname(__file__), "..", "assets")
 KNU_LOGO_PATH = os.path.join(ASSETS_DIR, "logo_13.png")
 
+
+def _asset_url(path: str) -> str:
+    """ui.image(로컬 파일 경로)는 호출마다 /_nicegui/auto/static/<해시>/... 라우트를 새로
+    등록하는데, main.py의 캐치올 라우트(@ui.page("/{path:path}"))가 서버 시작 시점에 먼저
+    등록돼 있어서 그 뒤에 동적으로 추가되는 이 라우트들을 가려버려(같은 경로에 먼저 매칭되는
+    라우트가 이김) 로고가 전부 404로 깨지는 문제가 있었다. main.py가 캐치올보다 먼저
+    등록해두는 정적 마운트(/assets -> frontend/assets/)를 직접 가리키는 URL만 쓰면 이
+    동적 등록 자체가 필요 없어져서 문제가 생기지 않는다."""
+    rel = os.path.relpath(path, ASSETS_DIR).replace(os.sep, "/")
+    return f"/assets/{rel}"
+
 ACCENT = "#C8102E"
 ACCENT_DARK = "#8F0B21"
 ACCENT_SOFT = "#C8102E14"
@@ -367,7 +378,9 @@ def _brand_mark():
             f"background:linear-gradient(180deg,{ACCENT},{GOLD});"
         )
         if os.path.exists(logo_path):
-            ui.image(logo_path).classes("w-8 h-8 transition-transform hover:scale-110").props("fit=contain")
+            ui.image(_asset_url(logo_path)).classes(
+                "w-8 h-8 transition-transform hover:scale-110"
+            ).props("fit=contain")
         with ui.element("div").classes("relative").style("min-width:180px;"):
             with ui.column().classes("gap-0 kdt-brand-text"):
                 ui.label("KDT AI·빅데이터").classes("font-extrabold text-base leading-tight").style(
@@ -478,7 +491,7 @@ def page_header(icon: str, title: str, subtitle: str = "", *, kicker: str = "", 
                 f"box-shadow: inset 0 0 0 1px {ACCENT}22;"
             ):
                 if logo and os.path.exists(logo):
-                    ui.image(logo).classes("w-7 h-7").props("fit=contain")
+                    ui.image(_asset_url(logo)).classes("w-7 h-7").props("fit=contain")
                 else:
                     ui.icon(icon).style(f"color:{ACCENT}; font-size:1.4rem;")
             with ui.column().classes("gap-0"):

@@ -223,6 +223,12 @@ def chat_page():
 
         def on_token(token: str):
             answer["text"] += token
+            # 스트리밍 도중 사용자가 다른 탭으로 이동하면 ui.sub_pages가 이 화면 전체를
+            # 지워버리는데, 그 뒤로도 이 콜백은 계속 불린다. 지워진 엘리먼트를 계속 건드리면
+            # "부모 슬롯이 삭제됨" 예외가 나서(그 예외 처리 과정에서 또 예외가 나며) 이후
+            # 상호작용까지 깨졌었다 - 지워졌으면 텍스트만 누적하고 화면 갱신은 건너뛴다.
+            if content_md.is_deleted:
+                return
             content_md.set_content(answer["text"])
             spinner.set_visibility(False)
             _scroll_to_bottom()
@@ -233,11 +239,11 @@ def chat_page():
             sources = await ask_stream(question, on_token, tier=tier["value"])
         except ModelServiceError as e:
             answer["text"] = str(e)
-            content_md.set_content(answer["text"])
-            content_md.classes("text-red-500")
             is_error = True
+            if not content_md.is_deleted:
+                content_md.set_content(answer["text"])
+                content_md.classes("text-red-500")
 
-        spinner.delete()
         messages.append(
             {
                 "role": "assistant",
@@ -247,6 +253,11 @@ def chat_page():
             }
         )
 
+        if content_md.is_deleted:
+            return
+
+        if not spinner.is_deleted:
+            spinner.delete()
         if not is_error:
             with body:
                 render_sources(sources)
