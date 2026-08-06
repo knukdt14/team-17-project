@@ -312,6 +312,15 @@ def apply_global_style():
             }}, {{ threshold: 0.12 }});
             function scan(root) {{
               if (!root.querySelectorAll) return;
+              // querySelectorAll은 root의 자손만 찾고 root 자신은 검사하지 않는다. ui.sub_pages가
+              // 탭을 바꾸며 새 콘텐츠를 넣을 때, MutationObserver의 addedNodes에 .kdt-reveal
+              // 엘리먼트 자신이 그대로 들어오는 경우가 있는데(감싸는 부모가 아니라 그 카드 줄
+              // 자체가 통째로 붙는 경우) 그럴 땐 자손 검사만으로는 못 찾아서 영영 관찰 대상이
+              // 안 되고 opacity:0으로 멈춰있었다 - 실제로 이게 "탭 이동하면 아래 카드들이
+              // 안 보이다가 새로고침해야 뜨는" 버그의 원인이었다. root 자신도 같이 검사한다.
+              if (root.matches && root.matches('.kdt-reveal:not(.kdt-reveal-in)')) {{
+                io.observe(root);
+              }}
               root.querySelectorAll('.kdt-reveal:not(.kdt-reveal-in)').forEach(function(el) {{ io.observe(el); }});
             }}
             scan(document);
