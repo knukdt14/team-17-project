@@ -1,10 +1,13 @@
 """
 theme.py
 - 앱 전체 브랜드 컬러 / 모션(애니메이션) 시스템 / 헤더 / 콘텐츠 레이아웃을 한 곳에서 관리한다.
-- "AI 웹디자이너" 컨셉으로 다시 다듬은 톤: 크림슨 레드 + 딥 잉크 + 골드 포인트를 쓰는
-  고급 기관형 팔레트, Pretendard 폰트, 카드/버튼/말풍선에 진입 애니메이션과 호버
-  인터랙션을 광범위하게 깔아서 Streamlit 시절의 밋밋한 느낌을 완전히 벗어난다.
-  헤더 좌측에는 경북대 로고(frontend/assets/logo_13.png)를 고정으로 붙인다.
+- "AI 웹디자이너" 컨셉으로 다듬은 톤: 크림슨 레드 + 딥 잉크 + 골드 포인트를 쓰는 기관형
+  팔레트에, Gowun Dodum(본문) + Jua(제목/포인트)로 조금 더 친근하고 귀여운 인상을 준다.
+  카드/버튼/말풍선에 진입 애니메이션과 호버 인터랙션을 광범위하게 깔아서 Streamlit
+  시절의 밋밋한 느낌을 벗어난다.
+  헤더 좌측 로고는 기수를 선택하면 그 기수의 연계기업 로고로 바뀌고(_brand_logo_path),
+  로고 위에 마우스를 올리면 "KDT AI·빅데이터" 문구 자리에 기수 선택 플라이아웃이 슬라이드
+  인되어 바로 다른 기수로 전환할 수 있다.
 - 구조적으로도 "좌측 사이드탭 + 우측 본문"이라는 관리자툴/Streamlit식 틀을 버렸다.
   네비게이션은 좌측 드로어가 아니라 헤더 안의 가로 필(pill) 메뉴로 넣고, 본문은
   .nicegui-content에 max-width를 줘서 화면 어디서든 하나의 단(單) 컬럼 콘텐츠 블록처럼
@@ -19,6 +22,7 @@ from nicegui import app, ui
 
 from api_client import ModelServiceError, upload_pdf
 from auth import is_admin, render_login_widget
+from cohorts import COHORT_LIST, get_cohort
 
 ASSETS_DIR = os.path.join(os.path.dirname(__file__), "..", "assets")
 KNU_LOGO_PATH = os.path.join(ASSETS_DIR, "logo_13.png")
@@ -40,7 +44,7 @@ NAV_ITEMS = [
     ("챗봇", "/chat"),
     ("일정", "/schedule"),
     ("오시는길", "/map"),
-    ("교수진", "/faculty"),
+    ("운영진", "/faculty"),
 ]
 
 
@@ -49,11 +53,9 @@ def apply_global_style():
     body_bg = ADMIN_BG if is_admin() else BG
     ui.add_head_html(
         f"""
-        <link rel="preconnect" href="https://cdn.jsdelivr.net">
         <link rel="preconnect" href="https://fonts.googleapis.com">
         <style>
-          @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css');
-          @import url('https://fonts.googleapis.com/css2?family=Nanum+Myeongjo:wght@400;700;800&display=swap');
+          @import url('https://fonts.googleapis.com/css2?family=Gowun+Dodum&family=Jua&display=swap');
 
           :root {{
             --kdt-accent: {ACCENT};
@@ -68,10 +70,10 @@ def apply_global_style():
           }}
 
           html, body, .q-field, .q-btn, .q-card {{
-            font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
+            font-family: 'Gowun Dodum', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
           }}
 
-          .kdt-serif {{ font-family: 'Nanum Myeongjo', 'Pretendard', serif !important; }}
+          .kdt-serif {{ font-family: 'Jua', 'Gowun Dodum', sans-serif !important; }}
           .kdt-kicker {{
             display: block;
             color: {GOLD};
@@ -244,6 +246,35 @@ def apply_global_style():
           }}
           .kdt-navlink:not(.kdt-navlink-active):hover::after {{ width: 60%; left: 20%; }}
 
+          /* ---------- 헤더 로고 호버 시 기수 변경 플라이아웃 ---------- */
+          .kdt-brand-text {{
+            transition: opacity 0.2s ease, transform 0.2s ease;
+          }}
+          .kdt-brand:hover .kdt-brand-text {{
+            opacity: 0;
+            transform: translateX(6px);
+          }}
+          .kdt-brand-flyout {{
+            position: absolute;
+            left: 0; top: 50%;
+            transform: translateY(-50%) translateX(-6px);
+            opacity: 0;
+            pointer-events: none;
+            background: #fff;
+            padding: 4px 6px;
+            border-radius: 999px;
+            border: 1px solid {GOLD}55;
+            box-shadow: var(--kdt-shadow-md);
+            transition: opacity 0.22s ease, transform 0.22s ease;
+            white-space: nowrap;
+            z-index: 60;
+          }}
+          .kdt-brand:hover .kdt-brand-flyout {{
+            opacity: 1;
+            transform: translateY(-50%) translateX(0);
+            pointer-events: auto;
+          }}
+
           /* ---------- 관리자 콘솔 바 ---------- */
           .kdt-admin-bar {{ animation: kdt-fade-up 0.5s cubic-bezier(.2,.7,.2,1) both; }}
           .kdt-admin-bar .q-field__control {{ background: rgba(255,255,255,0.06) !important; }}
@@ -289,18 +320,49 @@ def _clear_cohort():
     app.storage.user["chat_messages"] = []
 
 
+def _switch_cohort(name: str):
+    # 헤더 로고 위 호버 플라이아웃에서 바로 기수를 바꿀 때도, 서로 다른 기수의 대화가
+    # 섞이지 않도록 _clear_cohort()와 같은 원칙으로 대화 기록을 같이 비운다.
+    app.storage.user["selected_cohort"] = name
+    app.storage.user["chat_messages"] = []
+    ui.navigate.to("/chat")
+
+
+def _brand_logo_path(cohort: str | None) -> str:
+    """상단바 로고: 기수를 선택하면 그 기수의 연계기업 로고로, 아니면 경북대 로고로."""
+    if cohort:
+        logo = get_cohort(cohort).get("logo")
+        if logo:
+            path = os.path.join(ASSETS_DIR, logo)
+            if os.path.exists(path):
+                return path
+    return KNU_LOGO_PATH
+
+
 def _brand_mark():
-    with ui.row().classes("items-center gap-3"):
+    cohort = app.storage.user.get("selected_cohort")
+    logo_path = _brand_logo_path(cohort)
+    with ui.row().classes("items-center gap-3 kdt-brand"):
         ui.element("div").classes("w-1 h-9 rounded-full").style(
             f"background:linear-gradient(180deg,{ACCENT},{GOLD});"
         )
-        if os.path.exists(KNU_LOGO_PATH):
-            ui.image(KNU_LOGO_PATH).classes("w-8 h-8 transition-transform hover:scale-110").props(
-                "fit=contain"
-            )
-        with ui.column().classes("gap-0"):
-            ui.label("KDT AI·빅데이터").classes("font-extrabold text-base leading-tight").style(f"color:{INK};")
-            ui.label("경북대학교 데이터융복합연구원").classes("text-[11px] leading-tight").style(f"color:{MUTED};")
+        if os.path.exists(logo_path):
+            ui.image(logo_path).classes("w-8 h-8 transition-transform hover:scale-110").props("fit=contain")
+        with ui.element("div").classes("relative").style("min-width:180px;"):
+            with ui.column().classes("gap-0 kdt-brand-text"):
+                ui.label("KDT AI·빅데이터").classes("font-extrabold text-base leading-tight").style(
+                    f"color:{INK};"
+                )
+                ui.label("경북대학교 데이터융복합연구원").classes("text-[11px] leading-tight").style(
+                    f"color:{MUTED};"
+                )
+            if not is_admin():
+                with ui.row().classes("kdt-brand-flyout items-center gap-1"):
+                    for name in COHORT_LIST:
+                        active = name == cohort
+                        ui.button(name, on_click=lambda name=name: _switch_cohort(name)).props(
+                            ("unelevated color=primary" if active else "flat") + " dense no-caps"
+                        ).classes("text-xs")
 
 
 def _admin_console_bar():
@@ -379,20 +441,24 @@ def frame(current_path: str = ""):
         _admin_console_bar()
 
 
-def page_header(icon: str, title: str, subtitle: str = "", *, kicker: str = "", right=None):
+def page_header(icon: str, title: str, subtitle: str = "", *, kicker: str = "", logo: str | None = None, right=None):
     """오른쪽에 부가 컨트롤(예: 챗봇의 무료/유료 토글)을 같이 놓고 싶을 때는
     right에 그 내용을 그리는 콜백을 넘기면 된다. icon은 이모지가 아니라 Material 아이콘
-    이름(예: "forum", "event", "place", "groups")을 받는다. kicker는 제목 위에 붙는
+    이름(예: "forum", "event", "place", "groups")을 받는다. logo를 넘기면 아이콘 대신
+    그 이미지를 보여준다(예: 챗봇 페이지의 경북대 로고). kicker는 제목 위에 붙는
     골드색 영문 소문구(예: "PROGRAM SCHEDULE")로, 없으면 생략된다."""
     with ui.row().classes("items-center justify-between w-full mb-6 flex-wrap gap-3 kdt-fade-up"):
         with ui.row().classes("items-center gap-3"):
             with ui.element("div").classes(
-                "w-12 h-12 min-w-[3rem] rounded-xl flex items-center justify-center"
+                "w-12 h-12 min-w-[3rem] rounded-xl flex items-center justify-center overflow-hidden"
             ).style(
                 f"background:linear-gradient(135deg,{ACCENT_SOFT},transparent); "
                 f"box-shadow: inset 0 0 0 1px {ACCENT}22;"
             ):
-                ui.icon(icon).style(f"color:{ACCENT}; font-size:1.4rem;")
+                if logo and os.path.exists(logo):
+                    ui.image(logo).classes("w-7 h-7").props("fit=contain")
+                else:
+                    ui.icon(icon).style(f"color:{ACCENT}; font-size:1.4rem;")
             with ui.column().classes("gap-0"):
                 if kicker:
                     ui.label(kicker).classes("kdt-kicker")

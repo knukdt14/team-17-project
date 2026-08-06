@@ -1,7 +1,8 @@
 """
 faculty_page.py
-- 사전교육/본교육을 담당하는 교수진을 보여준다. 사진이 없어서 이니셜 배지로 대신한다.
-- 프로그램 전체 공통 정보라 기수별로 나누지 않는다.
+- 원장/본부장/연구원 등 운영진과, 사전교육/본교육을 담당하는 교수진을 함께 보여준다.
+  "교수진"이라는 이름만으로는 운영진까지 아우르지 못해서 탭 이름/제목을 "운영진"으로 바꿨다.
+- 사진이 없어서 이니셜 배지로 대신한다. 프로그램 전체 공통 정보라 기수별로 나누지 않는다.
 - 소속/담당 분야는 정확한 정보를 받기 전까지 임의로 채워둔 placeholder다.
 """
 
@@ -10,6 +11,29 @@ from nicegui import ui
 from theme import ACCENT, ACCENT_DARK, BORDER, GOLD, INK, MUTED, frame, page_header
 
 FACULTY = [
+    (
+        "운영진",
+        [
+            {
+                "name": "정태옥",
+                "role": "원장",
+                "affiliation": "경북대학교 데이터융복합연구원",
+                "field": "교육과정 총괄",
+            },
+            {
+                "name": "류승령",
+                "role": "본부장",
+                "affiliation": "경북대학교 데이터융복합연구원",
+                "field": "교육운영 총괄",
+            },
+            {
+                "name": "김효진",
+                "role": "연구원",
+                "affiliation": "경북대학교 데이터융복합연구원",
+                "field": "교육기획 및 운영지원",
+            },
+        ],
+    ),
     (
         "사전교육",
         [
@@ -54,9 +78,7 @@ def _initials(name: str) -> str:
 
 
 def _faculty_card(p: dict):
-    with ui.card().classes(
-        "items-stretch text-center p-0 w-64 transition-all hover:-translate-y-1.5 overflow-hidden"
-    ).style("cursor: default;"):
+    with ui.card().classes("items-stretch text-center p-0 w-64 overflow-hidden").style("cursor: default;"):
         ui.element("div").classes("w-full h-1.5").style(
             f"background:linear-gradient(90deg,{ACCENT},{GOLD});"
         )
@@ -85,7 +107,7 @@ def _faculty_card(p: dict):
 @ui.page("/faculty")
 def faculty_page():
     frame(current_path="/faculty")
-    page_header("groups", "교수진", "사전교육/본교육을 담당하는 교수진을 소개합니다.", kicker="FACULTY")
+    page_header("groups", "운영진", "교육을 이끌어가는 운영진과 교수진을 소개합니다.", kicker="TEAM")
 
     for section_title, people in FACULTY:
         with ui.row().classes("items-center gap-3 mb-4 mt-2"):
