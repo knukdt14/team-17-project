@@ -76,7 +76,7 @@ def _faculty_card(p: dict):
 @ui.page("/faculty")
 def faculty_page():
     frame(current_path="/faculty")
-    page_header("👩‍🏫", "교수진", "사전교육/본교육을 담당하는 교수진을 소개합니다.")
+    page_header("groups", "교수진", "사전교육/본교육을 담당하는 교수진을 소개합니다.")
 
     for section_title, people in FACULTY:
         ui.label(section_title).classes("font-extrabold text-base mb-4 mt-2").style(f"color:{ACCENT};")

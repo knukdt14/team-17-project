@@ -39,7 +39,7 @@ async def ask_stream(
                 if resp.status_code == 429:
                     # 동시 요청이 몰려 model이 바쁠 때를 대비한 안내 (model이 아직 429를
                     # 내려주지 않아도 이 분기는 미리 준비해둔 것)
-                    raise ModelServiceError("🚦 지금 다른 사용자의 답변을 생성하고 있어요. 잠시 후 다시 시도해주세요.")
+                    raise ModelServiceError("지금 다른 사용자의 답변을 생성하고 있어요. 잠시 후 다시 시도해주세요.")
                 resp.raise_for_status()
                 async for line in resp.aiter_lines():
                     if not line or not line.startswith("data: "):
@@ -49,7 +49,7 @@ async def ask_stream(
                         break
                     event = json.loads(event_raw)
                     if "error" in event:
-                        raise ModelServiceError(f"❌ 죄송합니다, 답변을 가져오지 못했습니다. ({event['error']})")
+                        raise ModelServiceError(f"죄송합니다, 답변을 가져오지 못했습니다. ({event['error']})")
                     if "sources" in event:
                         sources.extend(event["sources"])
                         continue
@@ -57,13 +57,13 @@ async def ask_stream(
                     if token:
                         on_token(token)
     except httpx.TimeoutException as e:
-        raise ModelServiceError("⏱️ 죄송합니다, 응답 시간이 초과되었습니다. 잠시 후 다시 시도해주세요.") from e
+        raise ModelServiceError("죄송합니다, 응답 시간이 초과되었습니다. 잠시 후 다시 시도해주세요.") from e
     except httpx.ConnectError as e:
-        raise ModelServiceError("🔌 죄송합니다, 서버에 연결할 수 없습니다. 잠시 후 다시 시도해주세요.") from e
+        raise ModelServiceError("죄송합니다, 서버에 연결할 수 없습니다. 잠시 후 다시 시도해주세요.") from e
     except ModelServiceError:
         raise
     except httpx.HTTPError as e:
-        raise ModelServiceError(f"❌ 죄송합니다, 답변을 가져오지 못했습니다. ({e})") from e
+        raise ModelServiceError(f"죄송합니다, 답변을 가져오지 못했습니다. ({e})") from e
 
     return sources
 
@@ -80,9 +80,9 @@ async def upload_pdf(filename: str, content: bytes) -> dict:
             return resp.json()
     except httpx.TimeoutException as e:
         raise ModelServiceError(
-            "⏱️ 업로드 요청이 시간 초과되었습니다. 파일 크기를 확인하거나 잠시 후 다시 시도해주세요."
+            "업로드 요청이 시간 초과되었습니다. 파일 크기를 확인하거나 잠시 후 다시 시도해주세요."
         ) from e
     except httpx.ConnectError as e:
-        raise ModelServiceError("🔌 서버에 연결할 수 없습니다. 잠시 후 다시 시도해주세요.") from e
+        raise ModelServiceError("서버에 연결할 수 없습니다. 잠시 후 다시 시도해주세요.") from e
     except httpx.HTTPError as e:
-        raise ModelServiceError(f"❌ 업로드 실패: {e}") from e
+        raise ModelServiceError(f"업로드 실패: {e}") from e

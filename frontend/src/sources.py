@@ -37,10 +37,10 @@ def render_sources(sources):
     text = src.get("text") or src.get("snippet") or ""
     article = src.get("article") or extract_article_label(text)
 
-    label = f"📄 관련: {article or filename}"
+    label = f"관련: {article or filename}"
     meta = filename + (f" · {page}페이지" if page else "")
 
-    with ui.button(label).props("flat dense no-caps unelevated").classes(
+    with ui.button(label, icon="description").props("flat dense no-caps unelevated").classes(
         "text-xs normal-case px-0 mt-1 min-h-0"
     ).style(f"color:{MUTED}; border-bottom: 1px dashed {MUTED};"):
         with ui.menu().classes("p-3 max-w-sm"):

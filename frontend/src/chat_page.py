@@ -94,7 +94,7 @@ def chat_page():
         _show_faq()
 
     page_header(
-        "💬",
+        "forum",
         "KDT 규정집 챗봇",
         "국민내일배움카드 / KDT 규정집 등 사내 규정에 대해 물어보세요.",
         right=lambda: ui.toggle(TIER_OPTIONS, value=tier["value"], on_change=_on_tier_change)
@@ -112,7 +112,9 @@ def chat_page():
         if messages:
             return
         with faq_box:
-            ui.label("💡 자주 묻는 질문").classes("text-sm text-gray-500 w-full")
+            with ui.row().classes("items-center gap-1.5 w-full"):
+                ui.icon("tips_and_updates", size="16px").classes("text-gray-500")
+                ui.label("자주 묻는 질문").classes("text-sm text-gray-500")
             for q in FAQ_QUESTIONS:
                 ui.button(q, on_click=lambda q=q: _ask(q)).props("outline no-caps color=primary").classes(
                     "text-xs normal-case"

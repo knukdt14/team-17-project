@@ -122,6 +122,6 @@ def landing():
                         if logo_path and os.path.exists(logo_path):
                             ui.image(logo_path).classes("w-full h-full").props("fit=cover")
                         else:
-                            ui.label(data.get("icon", "🎓"))
+                            ui.label(name[:2]).classes("text-2xl font-extrabold").style(f"color:{ACCENT};")
                     ui.label(name).classes("font-extrabold text-xl").style(f"color:{INK};")
                     ui.label(data.get("subtitle", "")).classes("text-sm mt-1").style(f"color:{MUTED};")

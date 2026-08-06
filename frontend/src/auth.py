@@ -26,7 +26,7 @@ def render_login_widget():
     """헤더 우측에 작은 로그인 버튼(팝오버 메뉴) 하나를 그린다. 배치는 호출하는 쪽
     (theme.frame)이 결정하고, 이 함수는 로그인 로직/내용에만 집중한다."""
     if is_admin():
-        with ui.button("🔑").props("flat round dense"):
+        with ui.button(icon="vpn_key").props("flat round dense"):
             with ui.menu().classes("p-3"):
                 with ui.column().classes("gap-2 w-48"):
                     ui.label("관리자로 로그인됨").classes("text-sm text-gray-500")
@@ -37,7 +37,7 @@ def render_login_widget():
 
                     ui.button("로그아웃", on_click=_logout).props("flat").classes("w-full")
     else:
-        with ui.button("🔒").props("flat round dense"):
+        with ui.button(icon="lock").props("flat round dense"):
             with ui.menu().classes("p-3"):
                 with ui.column().classes("gap-2 w-56"):
                     ui.label("관리자 로그인").classes("text-sm font-bold")
@@ -56,6 +56,8 @@ def render_login_widget():
                     pw.on("keydown.enter", _login)
                     ui.button("로그인", on_click=_login).classes("w-full")
                     if _admin_password() == _DEFAULT_ADMIN_PASSWORD:
-                        ui.label("⚠️ ADMIN_PASSWORD 환경변수 미설정 — 기본값 사용 중").classes(
-                            "text-amber-600 text-xs"
-                        )
+                        with ui.row().classes("items-center gap-1"):
+                            ui.icon("warning", size="14px").classes("text-amber-600")
+                            ui.label("ADMIN_PASSWORD 환경변수 미설정 — 기본값 사용 중").classes(
+                                "text-amber-600 text-xs"
+                            )

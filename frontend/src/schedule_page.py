@@ -20,7 +20,7 @@ def schedule_page():
         ui.label("먼저 기수를 선택해주세요.").classes("text-gray-500 m-4")
         return
 
-    page_header("📅", f"{cohort} 교육 일정", data.get("title", ""))
+    page_header("event", f"{cohort} 교육 일정", data.get("title", ""))
 
     period = data.get("period", {})
     location = data.get("location", {})
@@ -46,7 +46,9 @@ def schedule_page():
                     if period_text:
                         ui.label(period_text).classes("text-sm").style(f"color:{MUTED};")
                     if loc_text:
-                        ui.label(f"📍 {loc_text}").classes("text-sm").style(f"color:{INK};")
+                        with ui.row().classes("items-center gap-1 flex-nowrap"):
+                            ui.icon("place", size="15px").style(f"color:{MUTED};")
+                            ui.label(loc_text).classes("text-sm").style(f"color:{INK};")
 
     with ui.grid(columns=2).classes("w-full gap-4 kdt-stagger"):
         with ui.card().classes("p-4"):

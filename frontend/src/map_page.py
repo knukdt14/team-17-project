@@ -56,11 +56,11 @@ def map_page():
     location = get_main_location(cohort)
 
     if not location:
-        page_header("📍", "오시는길")
+        page_header("place", "오시는길")
         ui.label("먼저 기수를 선택해주세요.").classes("text-gray-500")
         return
 
-    page_header("📍", "오시는길", "")
+    page_header("place", "오시는길", "")
 
     search_link = f"https://map.kakao.com/link/search/{quote(location)}"
 
@@ -72,7 +72,7 @@ def map_page():
         ui.label("지도 미리보기는 KAKAO_JS_KEY가 설정되면 표시됩니다. 지금은 길찾기 링크만 이용해주세요.").classes(
             "text-sm mb-3"
         ).style(f"color:{MUTED};")
-        ui.link("🚗 카카오맵으로 길찾기", search_link).props("target=_blank").classes(
+        ui.link("카카오맵으로 길찾기", search_link).props("target=_blank").classes(
             "block w-full text-center bg-yellow-300 text-gray-900 font-bold rounded-xl py-3 no-underline"
         )
         return
@@ -85,10 +85,10 @@ def map_page():
             f"""
             <div id="kdt-map" style="width:100%;height:520px;border-radius:12px;"></div>
             <a id="kdt-route-link" href="{search_link}" target="_blank"
-               style="display:inline-block;margin-top:14px;padding:11px 18px;background:#FEE500;
+               style="display:inline-flex;align-items:center;margin-top:14px;padding:11px 18px;background:#FEE500;
                       color:#191919;border-radius:10px;text-decoration:none;font-weight:bold;
                       font-size:0.9rem;">
-              🚗 카카오맵 앱으로 길찾기
+              <i class="material-icons" style="font-size:18px;margin-right:6px;">directions_car</i>카카오맵 앱으로 길찾기
             </a>
             <span style="display:inline-block;margin-left:10px;font-size:0.8rem;color:{MUTED};">
               누르면 카카오맵 앱/웹에서 현재 위치 기준 경로를 바로 안내받을 수 있어요.
