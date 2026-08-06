@@ -126,13 +126,17 @@ def map_page():
         ).props("flat no-caps dense").classes("mt-1 text-xs px-0").style(f"color:{MUTED};")
 
     with ui.card().classes("w-full p-3 kdt-reveal"):
+        # 카드(w-full)는 flex 컨테이너라서, ui.html()이 만드는 wrapper div도 명시적으로
+        # w-full을 안 주면 flex item 기본 동작(shrink-to-fit)으로 폭이 0에 수렴한다.
+        # 그러면 안의 #kdt-map(style width:100%)도 "0의 100%"라 결국 0폭이 되고, 카카오맵이
+        # 그 순간의 컨테이너 크기를 기준으로 지도를 만들어서 화면 왼쪽 일부에만 좁게 그려진다.
         ui.html(
             f"""
             <div id="kdt-map" style="width:100%;height:520px;border-radius:12px;"></div>
             <div id="kdt-route-info" style="display:none;margin-top:12px;padding:10px 14px;
                  border-radius:10px;font-size:0.85rem;font-weight:700;"></div>
             """
-        )
+        ).classes("w-full")
         with ui.row().classes("items-center gap-3 mt-3 flex-nowrap"):
             ui.link("카카오맵 앱으로 길찾기", search_link, new_tab=True).props("id=kdt-route-link").classes(
                 "px-4 py-2.5 rounded-xl font-bold no-underline text-sm whitespace-nowrap"
