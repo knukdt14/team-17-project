@@ -54,7 +54,27 @@ PROMPT_STYLE = "service"
 USE_HYBRID_RETRIEVAL = True
 TOP_K = 5
 
-state = {"vectorstore": None, "chunks": None, "retriever": None, "chains": {}}
+# 기수 -> 모집공고 PDF 파일명. cohorts.py(frontend)의 COHORT_LIST와 맞춰뒀다 - 새 기수가
+# 열리면 여기도 같이 추가해야 그 기수 전용 검색이 적용된다.
+COHORT_PDF_FILES = {
+    "13기": "KDT_13기_모집공고.pdf",
+    "14기": "KDT_14기_아진산업_모집공고.pdf",
+    "15기": "KDT_15기_티에이치엔_모집공고.pdf",
+    "17기": "KDT_17기_피엔티_모집공고.pdf",
+}
+# 지금 서비스 중인 기수가 아닌 모집공고 - 특정 기수 것으로 배정돼있지 않으니 아무한테도
+# 안 보이게 모든 기수 검색에서 공통으로 제외한다.
+_OTHER_COHORT_FILES = {"KDT_HD건설기계_HiCEED_모집공고.pdf"}
+_ALL_COHORT_FILES = set(COHORT_PDF_FILES.values()) | _OTHER_COHORT_FILES
+
+state = {
+    "vectorstore": None,
+    "chunks": None,
+    "retriever": None,
+    "common_retriever": None,
+    "cohort_own_docs": {},
+    "chains": {},
+}
 gpu_lock = threading.Lock()  # 임베딩/LLM 인스턴스 1개 -> 동시 요청을 직렬화해서 안전하게 처리
 
 
@@ -62,6 +82,29 @@ def _build_retriever():
     if USE_HYBRID_RETRIEVAL:
         return get_hybrid_retriever(state["vectorstore"], state["chunks"], k=TOP_K)
     return get_retriever(state["vectorstore"], k=TOP_K)
+
+
+def _build_common_retriever():
+    """모든 기수 모집공고를 제외한 공통 문서(규정집 등)만 검색하는 리트리버. 기수가 없는
+    요청(관리자 등)의 기본값이자, 기수가 있는 요청에서도 "그 기수 자신의 문서"에 얹어서 함께
+    검색하는 공통 지식 베이스로 쓰인다. 하이브리드가 아니면(USE_HYBRID_RETRIEVAL=False) 필터를
+    지원하지 않는 get_retriever로 폴백 - 이 경우는 기수 구분 없이 전체 문서를 검색한다."""
+    if not USE_HYBRID_RETRIEVAL:
+        return get_retriever(state["vectorstore"], k=TOP_K)
+    common_sources = {c.source for c in state["chunks"] if c.source not in _ALL_COHORT_FILES}
+    return get_hybrid_retriever(state["vectorstore"], state["chunks"], k=TOP_K, allowed_sources=common_sources)
+
+
+def _build_cohort_own_docs():
+    """기수별 모집공고 자체는 chunk 수가 2~3개로 너무 적어서, 일반적인 질문("교육장이 어디야?")
+    과의 검색 랭킹 경쟁에서 규정집의 서식/양식 페이지 같은 문서에 밀려 top-k 밖으로 밀려나는
+    문제가 실측으로 확인됨(랭킹에만 맡기면 기수 정보가 아예 컨텍스트에 안 들어감). 그래서 검색
+    랭킹에 맡기지 않고, 그 기수 문서 전체 chunk를 항상 컨텍스트에 포함시킨다 - 문서 자체가
+    작아서(기수당 2~3 chunk) 매 요청마다 넣어도 컨텍스트 길이 부담이 거의 없다."""
+    return {
+        cohort: chunks_to_documents([c for c in state["chunks"] if c.source == pdf_filename])
+        for cohort, pdf_filename in COHORT_PDF_FILES.items()
+    }
 
 
 @asynccontextmanager
@@ -81,6 +124,8 @@ async def lifespan(app: FastAPI):
         embedding_device=EMBEDDING_DEVICE,
     )
     state["retriever"] = _build_retriever()
+    state["common_retriever"] = _build_common_retriever()
+    state["cohort_own_docs"] = _build_cohort_own_docs()
     state["chains"] = {
         tier: get_answer_chain(llm_key=llm_key, prompt_style=PROMPT_STYLE)
         for tier, llm_key in TIER_LLM_KEYS.items()
@@ -103,6 +148,7 @@ app.add_middleware(
 class AskRequest(BaseModel):
     question: str
     tier: str = "free"
+    cohort: str | None = None  # 주어지면 그 기수의 모집공고만 검색 대상에 포함(다른 기수 문서 제외)
 
 
 class IngestResponse(BaseModel):
@@ -176,13 +222,18 @@ def _best_snippet(answer: str, text: str) -> str:
     return "\n".join(snippet_lines)
 
 
-def _stream_answer(question: str, tier: str):
+def _stream_answer(question: str, tier: str, cohort: str | None = None):
     """검색 -> LLM 스트리밍 -> 마지막에 근거 문서(sources) 순서로 SSE 이벤트를 흘려보낸다.
-    generate가 끝나기 전에 다음 요청이 GPU를 밟지 않도록, 스트림 소비가 끝날 때까지 gpu_lock을 쥔다."""
+    generate가 끝나기 전에 다음 요청이 GPU를 밟지 않도록, 스트림 소비가 끝날 때까지 gpu_lock을 쥔다.
+    cohort가 주어지면 그 기수의 모집공고 전체(chunk 수가 적어 검색 랭킹에 안 맡기고 항상 포함)를
+    공통 검색 결과 앞에 붙인다 - 다른 기수 모집공고는 공통 리트리버에서 아예 제외돼 있으므로
+    섞여 들어올 일이 없다."""
     chain = state["chains"].get(tier) or state["chains"]["free"]
+    retriever = state["common_retriever"] or state["retriever"]
+    own_docs = state["cohort_own_docs"].get(cohort, [])
     answer_parts = []
     with gpu_lock:
-        docs = state["retriever"].invoke(question)
+        docs = own_docs + retriever.invoke(question)
         context = format_docs(docs)
         for token in chain.stream({"context": context, "question": question}):
             answer_parts.append(token)
@@ -213,7 +264,9 @@ def ask(req: AskRequest):
     if not req.question.strip():
         raise HTTPException(status_code=400, detail="질문을 입력하세요.")
 
-    return StreamingResponse(_stream_answer(req.question, req.tier), media_type="text/event-stream")
+    return StreamingResponse(
+        _stream_answer(req.question, req.tier, req.cohort), media_type="text/event-stream"
+    )
 
 
 @app.post("/ingest", response_model=IngestResponse)
@@ -236,6 +289,8 @@ def ingest(file: UploadFile = File(...)):
         persist_store(state["vectorstore"], VECTORSTORE_BACKEND, EMBEDDING_MODEL_KEY, base_dir=VECTORSTORE_DIR)
         state["chunks"].extend(new_chunks)
         state["retriever"] = _build_retriever()
+        state["common_retriever"] = _build_common_retriever()
+        state["cohort_own_docs"] = _build_cohort_own_docs()
         state["chains"] = {
             tier: get_answer_chain(llm_key=llm_key, prompt_style=PROMPT_STYLE)
             for tier, llm_key in TIER_LLM_KEYS.items()

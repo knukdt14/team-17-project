@@ -236,7 +236,9 @@ def chat_page():
         is_error = False
         sources: list = []
         try:
-            sources = await ask_stream(question, on_token, tier=tier["value"])
+            sources = await ask_stream(
+                question, on_token, tier=tier["value"], cohort=app.storage.user.get("selected_cohort")
+            )
         except ModelServiceError as e:
             answer["text"] = str(e)
             is_error = True
