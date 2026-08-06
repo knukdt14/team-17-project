@@ -66,7 +66,12 @@ def root_page(path: str = ""):
             f'<script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey={KAKAO_JS_KEY}&libraries=services"></script>'
         )
     frame(current_path=f"/{path}" if path else "/")
-    ui.sub_pages(ROUTES)
+    # .nicegui-content는 align-items:flex-start라서, 폭을 명시하지 않은 자식은 자기 콘텐츠의
+    # "자연스러운" 폭으로 쪼그라든다. ui.sub_pages 컨테이너가 그 상태였는데, 페이지마다 안에
+    # 든 내용에 따라 이 쪼그라든 폭이 들쭉날쭉해서(예: 랜딩 페이지는 히어로 문구 너비 정도로만
+    # 좁아짐) 어떤 탭은 넓게, 어떤 탭은 좁고 왼쪽으로 쏠려 보였다. w-full로 고정폭을 줘서
+    # 항상 .nicegui-content 폭(CONTENT_MAX_WIDTH) 전체를 쓰게 한다.
+    ui.sub_pages(ROUTES).classes("w-full")
 
 
 if __name__ in {"__main__", "__mp_main__"}:
