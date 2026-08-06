@@ -95,10 +95,23 @@ _CHAT_CSS = """
     z-index: 900;
   }
 
-  /* 관리자 PDF 업로드 버튼 - 색(primary)은 그대로 두고 크기만 키운다 */
+  /* 관리자 PDF 업로드 버튼 - 색(primary)은 그대로 두고 헤더(버튼) 크기만 키운다.
+     .q-uploader__title/__subtitle는 버튼과 업로드된 파일 목록 항목이 같이 쓰는 클래스라,
+     .q-uploader__header-content로 범위를 좁혀서 버튼에만 적용되게 한다. */
   .kdt-upload-lg .q-uploader__header-content { padding: 18px 22px; }
-  .kdt-upload-lg .q-uploader__title { font-size: 1.05rem; }
-  .kdt-upload-lg .q-uploader__subtitle { font-size: 0.82rem; }
+  .kdt-upload-lg .q-uploader__header-content .q-uploader__title { font-size: 1.05rem; }
+  .kdt-upload-lg .q-uploader__header-content .q-uploader__subtitle { font-size: 0.82rem; }
+
+  /* 업로드 후 아래 뜨는 "무엇을 올렸는지" 파일 목록 항목 - 버튼과 같은 클래스를 그냥 두면
+     버튼만큼 커져서 과하므로, 더 작고 은은한 카드로 별도 스타일링한다. */
+  .kdt-upload-lg .q-uploader__list { padding: 6px; min-height: 0; }
+  .kdt-upload-lg .q-uploader__file {
+    border-radius: 10px !important;
+    border-color: #E9E5DD !important;
+  }
+  .kdt-upload-lg .q-uploader__file-header { padding: 6px 10px; }
+  .kdt-upload-lg .q-uploader__list .q-uploader__title { font-size: 0.75rem; }
+  .kdt-upload-lg .q-uploader__list .q-uploader__subtitle { font-size: 0.68rem; }
 </style>
 """
 
@@ -443,6 +456,10 @@ def _admin_manager():
                     # 스택이 흔들림), 항상 살아있는 files_box를 슬롯으로 다시 잡아준다.
                     with files_box:
                         ui.notify(f"{filename} 삭제 완료", type="positive")
+                    # ui.upload 위젯은 "마지막으로 올린 파일" 진행률(예: "3.8MB / 100.00%")을
+                    # 자기 자신의 상태로 따로 들고 있어서, 서버에서 그 파일을 지워도 위젯
+                    # 표시는 그대로 남아있었다 - reset()으로 위젯 쪽 표시도 같이 비운다.
+                    upload_widget.reset()
                 except ModelServiceError as e:
                     with files_box:
                         ui.notify(str(e), type="negative")
@@ -507,6 +524,10 @@ def _admin_manager():
                     return
                 upload_status.text = f"{data['filename']} 반영 완료 (청크 {data['chunks_added']}개 추가)"
                 upload_status.style("color:#16A34A;")
+                # 업로드가 끝나도 위젯 자체는 방금 올린 파일의 진행률을 계속 붙들고 있어서,
+                # 다음 업로드를 누르기 전까지 "3.8MB / 100.00%"가 그대로 남아있었다 - 매
+                # 업로드 완료 시점에 위젯을 비워 항상 "0.0B / 0.00%"로 되돌려둔다.
+                upload_widget.reset()
                 faq_box.clear()
                 questions = data.get("faq_questions") or []
                 if questions:
