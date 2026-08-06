@@ -101,13 +101,18 @@ def frame(current_path: str = ""):
             ).props("flat").classes("w-full").style(f"color:{MUTED};")
 
 
-def page_header(icon: str, title: str, subtitle: str = ""):
-    with ui.row().classes("items-center gap-3 mb-6"):
-        with ui.element("div").classes(
-            "w-12 h-12 min-w-[3rem] rounded-xl flex items-center justify-center text-xl"
-        ).style(f"background:{ACCENT_SOFT};"):
-            ui.label(icon)
-        with ui.column().classes("gap-0"):
-            ui.label(title).classes("text-2xl font-extrabold").style(f"color:{INK};")
-            if subtitle:
-                ui.label(subtitle).classes("text-sm").style(f"color:{MUTED};")
+def page_header(icon: str, title: str, subtitle: str = "", action=None):
+    """action을 넘기면 제목은 왼쪽, 그 콜백이 그리는 내용(보통 버튼 하나)은 같은 줄 오른쪽 끝에
+    분리돼서 나온다 (제목=주인공, action=보조 기능이라는 위계를 시각적으로 구분하기 위함)."""
+    with ui.row().classes("items-center justify-between gap-3 mb-6 w-full flex-wrap"):
+        with ui.row().classes("items-center gap-3"):
+            with ui.element("div").classes(
+                "w-12 h-12 min-w-[3rem] rounded-xl flex items-center justify-center text-xl"
+            ).style(f"background:{ACCENT_SOFT};"):
+                ui.label(icon)
+            with ui.column().classes("gap-0"):
+                ui.label(title).classes("text-2xl font-extrabold").style(f"color:{INK};")
+                if subtitle:
+                    ui.label(subtitle).classes("text-sm").style(f"color:{MUTED};")
+        if action:
+            action()
