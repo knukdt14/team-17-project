@@ -5,16 +5,18 @@ chat_page.py
   브라우저 쿠키 기반 저장소가 아니면 다른 탭으로 갔다 오는 사이 기록이 날아간다).
 """
 
+import asyncio
+
 from nicegui import app, ui
 
 from api_client import ModelServiceError, ask_stream
 from auth import is_admin
 from sources import render_sources
-from theme import MUTED, frame, page_header
+from theme import frame, page_header
 
 # 무료/유료 버전 데모 토글 - model이 tier에 따라 solar(무료)/groq_llama(유료)로 답변한다.
 # 과금 로직은 없고 시각적으로만 구분되는 데모용 기능.
-TIER_OPTIONS = {"free": "🆓 무료 버전", "paid": "💎 유료 버전"}
+TIER_OPTIONS = {"free": "무료 버전", "paid": "유료 버전"}
 
 # 챗봇 화면에 바로 보여줄 자주 묻는 질문(규정 관련 위주).
 # 일정처럼 기수마다 값이 달라지는 정보는 여기 넣지 않는다 — 벡터DB가 기수 구분 없이
@@ -29,6 +31,12 @@ FAQ_QUESTIONS = [
 LABELS = {"user": "사용자", "assistant": "AI 어시스턴트"}
 
 
+def _scroll_to_bottom():
+    # ui.run_javascript는 코루틴이라 동기 콜백(on_token) 안에서는 await할 수 없어서
+    # create_task로 던져둔다 (스크롤은 결과를 기다릴 필요가 없는 fire-and-forget).
+    asyncio.create_task(ui.run_javascript("window.scrollTo(0, document.body.scrollHeight)"))
+
+
 @ui.page("/chat")
 def chat_page():
     frame(current_path="/chat")
@@ -40,27 +48,41 @@ def chat_page():
         ui.link("기수 선택하러 가기", "/").classes("m-4")
         return
 
-    page_header("💬", "KDT 규정집 챗봇", "국민내일배움카드 / KDT 규정집 등 사내 규정에 대해 물어보세요.")
-
     tier = {"value": app.storage.user.get("llm_tier", "free")}
 
     def _on_tier_change(e):
         tier["value"] = e.value
         app.storage.user["llm_tier"] = e.value
+        # 무료<->유료는 서로 다른 모델이라, 지금까지의 대화를 그대로 이어붙이면 어느 모델이
+        # 만든 답변인지 헷갈린다. 버전을 바꾸면 새 대화로 취급해서 화면/기록을 같이 비운다.
+        messages.clear()
+        chat_box.clear()
+        _show_faq()
 
-    with ui.row().classes("items-center gap-3 mb-4 flex-wrap"):
-        ui.label("응답 모델").classes("text-xs font-bold").style(f"color:{MUTED};")
-        ui.toggle(TIER_OPTIONS, value=tier["value"], on_change=_on_tier_change).props(
-            "rounded unelevated color=primary"
-        )
-        ui.label("데모용 - 무료는 Solar, 유료는 Llama 3.3 70B로 답변합니다.").classes("text-xs").style(
-            f"color:{MUTED};"
-        )
+    page_header(
+        "💬",
+        "KDT 규정집 챗봇",
+        "국민내일배움카드 / KDT 규정집 등 사내 규정에 대해 물어보세요.",
+        right=lambda: ui.toggle(TIER_OPTIONS, value=tier["value"], on_change=_on_tier_change)
+        .props("rounded unelevated toggle-color=primary")
+        .classes("border"),
+    )
 
     messages: list = app.storage.user.setdefault("chat_messages", [])
     chat_box = ui.column().classes("w-full gap-2")
     faq_box = ui.row().classes("w-full gap-2 flex-wrap mb-3")
     input_row = ui.row().classes("w-full items-center gap-2 mt-2")
+
+    def _show_faq():
+        faq_box.clear()
+        if messages:
+            return
+        with faq_box:
+            ui.label("💡 자주 묻는 질문").classes("text-sm text-gray-500 w-full")
+            for q in FAQ_QUESTIONS:
+                ui.button(q, on_click=lambda q=q: _ask(q)).props("outline no-caps color=primary").classes(
+                    "text-xs normal-case"
+                )
 
     def _render_history_message(message: dict):
         with chat_box:
@@ -88,6 +110,7 @@ def chat_page():
         with chat_box:
             with ui.chat_message(name=LABELS["user"], sent=True).classes("w-full"):
                 ui.markdown(question)
+        _scroll_to_bottom()
 
         answer = {"text": ""}
         with chat_box:
@@ -95,11 +118,13 @@ def chat_page():
                 with ui.column().classes("gap-0.5 w-full") as body:
                     content_md = ui.markdown("")
                     spinner = ui.spinner("dots", size="2em", color="primary")
+        _scroll_to_bottom()
 
         def on_token(token: str):
             answer["text"] += token
             content_md.set_content(answer["text"])
             spinner.set_visibility(False)
+            _scroll_to_bottom()
 
         is_error = False
         sources: list = []
@@ -124,6 +149,7 @@ def chat_page():
         if not is_error:
             with body:
                 render_sources(sources)
+        _scroll_to_bottom()
 
     async def _submit():
         q = question_input.value.strip() if question_input.value else ""
@@ -132,13 +158,7 @@ def chat_page():
         question_input.value = ""
         await _ask(q)
 
-    if not messages:
-        with faq_box:
-            ui.label("💡 자주 묻는 질문").classes("text-sm text-gray-500 w-full")
-            for q in FAQ_QUESTIONS:
-                ui.button(q, on_click=lambda q=q: _ask(q)).props("outline no-caps color=primary").classes(
-                    "text-xs normal-case"
-                )
+    _show_faq()
 
     with input_row:
         question_input = ui.input(placeholder="질문을 입력하세요.").classes("flex-grow").on(

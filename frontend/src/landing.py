@@ -1,8 +1,8 @@
 """
 landing.py
 - 기수를 먼저 선택해야 다른 탭(챗봇/일정/오시는길/교수진)이 나타난다.
-- 4개 기수 카드를 2x2로 배치하고 은은하게 부유시키다가, 카드를 클릭하면 그 기수로
-  화면이 전환된다.
+- 4개 기수 카드를 가로 한 줄에 폭 꽉 채워 나란히 배치하고 은은하게 부유시키다가,
+  카드를 클릭하면 그 기수로 화면이 전환된다.
 - 이미 기수를 선택한 상태로 "/"에 들어오면 바로 챗봇으로 보낸다. "기수 변경" 버튼만
   선택(+대화기록)을 지우고 여기로 돌아오게 한다 (theme.py의 좌측 드로어에서 호출).
 """
@@ -77,12 +77,11 @@ def landing():
             ui.label("소속된 기수를 선택해주세요").classes("text-base").style(f"color:{MUTED};")
             ui.element("div").classes("w-12 h-1 rounded-full mt-2").style(f"background:{ACCENT};")
 
-        with ui.grid(columns=2).classes("gap-8 justify-center") as grid:
-            grid.style("width: fit-content;")
+        with ui.row().classes("w-full max-w-5xl gap-6 flex-nowrap overflow-x-auto px-1"):
             for name in COHORT_LIST:
                 data = get_cohort(name)
                 with ui.card().classes(
-                    "kdt-float-card items-center text-center p-9 w-64 cursor-pointer"
+                    "kdt-float-card items-center text-center p-9 flex-1 min-w-0 cursor-pointer"
                 ).on("click", lambda name=name: _select(name)):
                     logo_path = os.path.join(ASSETS_DIR, data["logo"]) if data.get("logo") else None
                     with ui.element("div").classes(

@@ -147,13 +147,18 @@ def frame(current_path: str = ""):
             ).props("flat").classes("w-full").style(f"color:{MUTED};")
 
 
-def page_header(icon: str, title: str, subtitle: str = ""):
-    with ui.row().classes("items-center gap-3 mb-6"):
-        with ui.element("div").classes(
-            "w-12 h-12 min-w-[3rem] rounded-xl flex items-center justify-center text-xl"
-        ).style(f"background:{ACCENT_SOFT};"):
-            ui.label(icon)
-        with ui.column().classes("gap-0"):
-            ui.label(title).classes("text-2xl font-extrabold").style(f"color:{INK};")
-            if subtitle:
-                ui.label(subtitle).classes("text-sm").style(f"color:{MUTED};")
+def page_header(icon: str, title: str, subtitle: str = "", *, right=None):
+    """오른쪽에 부가 컨트롤(예: 챗봇의 무료/유료 토글)을 같이 놓고 싶을 때는
+    right에 그 내용을 그리는 콜백을 넘기면 된다."""
+    with ui.row().classes("items-center justify-between w-full mb-6 flex-wrap gap-3"):
+        with ui.row().classes("items-center gap-3"):
+            with ui.element("div").classes(
+                "w-12 h-12 min-w-[3rem] rounded-xl flex items-center justify-center text-xl"
+            ).style(f"background:{ACCENT_SOFT};"):
+                ui.label(icon)
+            with ui.column().classes("gap-0"):
+                ui.label(title).classes("text-2xl font-extrabold").style(f"color:{INK};")
+                if subtitle:
+                    ui.label(subtitle).classes("text-sm").style(f"color:{MUTED};")
+        if right:
+            right()
