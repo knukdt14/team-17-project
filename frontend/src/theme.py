@@ -500,13 +500,29 @@ def frame(current_path: str = ""):
         _admin_console_bar()
 
 
-def page_header(icon: str, title: str, subtitle: str = "", *, kicker: str = "", logo: str | None = None, right=None):
+def page_header(
+    icon: str,
+    title: str,
+    subtitle: str = "",
+    *,
+    kicker: str = "",
+    logo: str | None = None,
+    right=None,
+    compact_right: bool = False,
+):
     """오른쪽에 부가 컨트롤(예: 챗봇의 무료/유료 토글, 일정 페이지의 "소개 보기" 버튼)을 같이
     놓고 싶을 때는 right에 그 내용을 그리는 콜백을 넘기면 된다. icon은 이모지가 아니라
     Material 아이콘 이름(예: "forum", "event", "place", "groups")을 받는다. logo를 넘기면
     아이콘 대신 그 이미지를 보여준다(예: 챗봇 페이지의 경북대 로고). kicker는 제목 위에 붙는
-    골드색 영문 소문구(예: "PROGRAM SCHEDULE")로, 없으면 생략된다."""
-    with ui.row().classes("items-center justify-between w-full mb-6 flex-wrap gap-3 kdt-fade-up"):
+    골드색 영문 소문구(예: "PROGRAM SCHEDULE")로, 없으면 생략된다.
+    compact_right=True를 넘기면 justify-between 대신 justify-start를 써서 right 콘텐츠를
+    화면 끝까지 밀어내지 않고 제목 옆에 적당한 간격만 두고 붙인다 - 지도 페이지의 장소 카드처럼
+    right 콘텐츠가 짧은 텍스트 카드일 때 justify-between을 쓰면 넓은 화면에서 중간 공백이
+    과하게 커 보이는 문제가 있었다. 기본값(False)은 기존 페이지들(챗봇의 무료/유료 토글처럼
+    화면 끝에 붙는 게 자연스러운 툴바형 배치)의 동작을 그대로 유지한다."""
+    row_justify = "justify-start" if compact_right else "justify-between"
+    row_gap = "gap-8" if compact_right else "gap-3"
+    with ui.row().classes(f"items-center {row_justify} w-full mb-6 flex-wrap {row_gap} kdt-fade-up"):
         with ui.row().classes("items-center gap-3"):
             with ui.element("div").classes(
                 "w-12 h-12 min-w-[3rem] rounded-xl flex items-center justify-center overflow-hidden"
