@@ -117,10 +117,12 @@ def _faculty_card(p: dict):
 def faculty_page():
     page_header("groups", "운영진", "교육을 이끌어가는 운영진과 교수진을 소개합니다.", kicker="TEAM")
 
-    for section_title, people in FACULTY:
-        with ui.row().classes("items-center gap-3 mb-4 mt-2"):
-            ui.label(section_title).classes("font-extrabold text-base").style(f"color:{ACCENT};")
-            ui.element("div").classes("h-px flex-grow").style(f"background:{BORDER};")
-        with ui.row().classes("gap-6 flex-wrap mb-8 kdt-stagger kdt-reveal"):
+    with ui.row().classes("gap-6 flex-wrap items-stretch mb-8 kdt-stagger kdt-reveal"):
+        for i, (_section_title, people) in enumerate(FACULTY):
+            if i > 0:
+                # 운영진과 교수진 그룹을 한 줄에 이어 붙이되, 얇은 세로 구분선으로 경계만 표시한다.
+                ui.element("div").classes("w-px self-stretch mx-1 hidden sm:block").style(
+                    f"background:{BORDER};"
+                )
             for p in people:
                 _faculty_card(p)
