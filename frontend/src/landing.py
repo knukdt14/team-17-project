@@ -134,8 +134,12 @@ def landing():
     )
 
     with ui.column().classes(
-        "w-full items-center justify-center gap-16 px-4 py-24 relative min-h-[85vh]"
-    ).style("z-index:1;"):
+        "w-full items-center justify-center gap-8 px-4 py-6 relative"
+    ).style(
+        # 헤더(~61px) + .nicegui-content 상하 패딩(40px+72px, theme.py 전역 스타일)만큼을
+        # 빼야 화면 안에 딱 맞아서 기수 선택 페이지에서 세로 스크롤이 안 생긴다.
+        "z-index:1; min-height: calc(100vh - 173px);"
+    ):
         with ui.column().classes("items-center gap-2 text-center kdt-hero"):
             ui.label("KYUNGPOOK NATIONAL UNIVERSITY").classes("kdt-kicker")
             ui.label("AI·빅데이터 전문가 양성과정").classes("kdt-serif text-4xl md:text-5xl font-extrabold").style(
