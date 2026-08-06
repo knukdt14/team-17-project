@@ -79,7 +79,10 @@ def landing():
             ui.label("소속된 기수를 선택해주세요").classes("text-base").style(f"color:{MUTED};")
             ui.element("div").classes("w-12 h-1 rounded-full mt-2").style(f"background:{ACCENT};")
 
-        with ui.row().classes("w-full max-w-5xl gap-10 flex-nowrap overflow-x-auto px-1 justify-center"):
+        # overflow-x-auto만 줘도 CSS 스펙상 overflow-y가 auto로 강제 승격돼서, 카드가
+        # 위로 떠오르는 애니메이션(-12px)의 윗부분이 잘려 보였다. 가로 스크롤 안전장치보다
+        # 이 클리핑 버그가 더 커서, overflow 자체를 없애고 카드 폭 축소(min-w-0)로만 방어한다.
+        with ui.row().classes("w-full max-w-5xl gap-10 flex-nowrap px-1 justify-center py-4"):
             for name in COHORT_LIST:
                 data = get_cohort(name)
                 with ui.card().classes(
