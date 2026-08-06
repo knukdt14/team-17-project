@@ -23,6 +23,15 @@ RUN pip install --no-cache-dir \
     # 이미 검증된 "triton 없는" fallback 경로를 강제로 타게 함.
     && pip uninstall -y triton
 
+# python:3.12-slim(Debian)에는 locale 패키지가 없어서 한글 등 비ASCII 파일명을 읽을 때
+# (예: data/raw의 규정집 PDF, 관리자가 업로드한 PDF) sys.getfilesystemencoding()이 UTF-8로
+# 정상 동작하지 않고 mojibake(깨진 서로게이트 문자)가 섞여 나오는 문제가 실측으로 확인됨 -
+# 이 문자열을 그대로 삭제 API의 URL로 인코딩하려 하면 UnicodeEncodeError가 나서 관리자
+# 화면에서 "삭제가 안 되는" 것처럼 보였다. PYTHONUTF8=1(PEP 540)로 로케일과 무관하게 항상
+# UTF-8을 쓰도록 강제해서 근본 원인을 없앤다. (pip install 뒤에 둬서 코드만 바뀔 때
+# 무거운 torch/cuda 레이어까지 캐시가 깨지지 않게 함)
+ENV PYTHONUTF8=1 PYTHONIOENCODING=utf-8
+
 COPY src/ ./src/
 RUN mkdir -p /app/data/raw /app/vectorstore /app/uploads
 

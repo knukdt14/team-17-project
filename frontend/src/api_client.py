@@ -8,6 +8,7 @@ api_client.py
 
 import json
 import os
+import urllib.parse
 
 import httpx
 
@@ -19,16 +20,33 @@ class ModelServiceError(Exception):
     """model 호출 실패를 사용자에게 보여줄 메시지와 함께 감싸는 예외."""
 
 
+def _error_detail(e: httpx.HTTPStatusError, fallback: str) -> str:
+    """model이 4xx/5xx와 함께 내려준 {"detail": "..."} 메시지가 있으면 그걸 그대로 보여주고,
+    없으면 fallback을 쓴다 (예: 업로드 5개 제한, 파일 없음 등 구체적인 사유를 그대로 노출)."""
+    try:
+        detail = e.response.json().get("detail")
+        if detail:
+            return str(detail)
+    except Exception:
+        pass
+    return fallback
+
+
 async def ask_stream(
-    question: str, on_token, history: list[dict] | None = None, tier: str = "free"
+    question: str,
+    on_token,
+    history: list[dict] | None = None,
+    tier: str = "free",
+    scope: str = "all",
 ) -> list[dict]:
     """질문을 model의 /ask(SSE)로 보내고, 토큰이 도착할 때마다 on_token(token)을 호출한다.
     history는 아직 model이 안 받아도 무해하게 무시되므로(Pydantic 기본 동작이 정의 안 된 필드를
     그냥 버림) 미리 실어 보내도 안전하다. 스트림이 끝나면 근거 문서(sources) 리스트를 반환한다.
 
     tier: "free"(Solar) 또는 "paid"(Groq Llama) - 무료/유료 버전 데모용 토글값을 그대로 넘긴다.
+    scope: "all"(기본 규정집+업로드 전체) 또는 "uploaded"(관리자 테스트용 - 업로드분만 검색).
     """
-    payload: dict = {"question": question, "tier": tier}
+    payload: dict = {"question": question, "tier": tier, "scope": scope}
     if history:
         payload["history"] = history
 
@@ -84,5 +102,40 @@ async def upload_pdf(filename: str, content: bytes) -> dict:
         ) from e
     except httpx.ConnectError as e:
         raise ModelServiceError("서버에 연결할 수 없습니다. 잠시 후 다시 시도해주세요.") from e
+    except httpx.HTTPStatusError as e:
+        raise ModelServiceError(_error_detail(e, f"업로드 실패: {e}")) from e
     except httpx.HTTPError as e:
         raise ModelServiceError(f"업로드 실패: {e}") from e
+
+
+async def list_files() -> list[dict]:
+    """현재 검색에 반영된 PDF(기본 제공 + 업로드) 목록을 model의 /files에서 가져온다."""
+    try:
+        async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
+            resp = await client.get(f"{MODEL_SERVICE_URL}/files")
+            resp.raise_for_status()
+            return resp.json()
+    except httpx.HTTPError as e:
+        raise ModelServiceError(f"파일 목록을 가져오지 못했습니다: {e}") from e
+
+
+async def delete_file(filename: str) -> dict:
+    """PDF 한 개를 벡터DB/BM25 코퍼스/디스크에서 모두 제거한다.
+
+    filename에 유효하지 않은 유니코드(로케일 문제로 깨진 파일명 등, surrogateescape로
+    보존된 문자)가 섞여 있으면 quote()가 기본(errors="strict")으로는 UnicodeEncodeError를
+    던지고, 이 함수가 그 예외를 잡지 못해 호출부에서 조용히(알림 없이) 실패한 것처럼
+    보이는 문제가 실측으로 확인됨 - errors="surrogateescape"로 원래 바이트를 그대로
+    퍼센트 인코딩해서 보낸다."""
+    try:
+        quoted = urllib.parse.quote(filename, safe="", errors="surrogateescape")
+        async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
+            resp = await client.delete(f"{MODEL_SERVICE_URL}/files/{quoted}")
+            resp.raise_for_status()
+            return resp.json()
+    except httpx.HTTPStatusError as e:
+        raise ModelServiceError(_error_detail(e, f"삭제 실패: {e}")) from e
+    except httpx.HTTPError as e:
+        raise ModelServiceError(f"삭제 실패: {e}") from e
+    except UnicodeError as e:
+        raise ModelServiceError(f"삭제 실패: 파일명 인코딩 오류 ({e})") from e

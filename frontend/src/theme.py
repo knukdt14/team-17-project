@@ -22,7 +22,6 @@ import os
 
 from nicegui import app, ui
 
-from api_client import ModelServiceError, upload_pdf
 from auth import is_admin, render_login_widget
 from cohorts import COHORT_LIST, get_cohort
 
@@ -415,9 +414,9 @@ def _brand_mark():
 
 def _admin_console_bar():
     """관리자 전용 콘솔: 세로 사이드바 대신 헤더 바로 아래 가로로 한 줄 깔아서, 화면
-    구조 자체는 일반 모드와 똑같이 "본문 한 덩어리"를 유지한다. PDF를 업로드하면 model이
-    청킹 후 벡터DB에 바로 반영하고 디스크에 저장(save_local)해서, 컨테이너를 재시작해도
-    남아있다."""
+    구조 자체는 일반 모드와 똑같이 "본문 한 덩어리"를 유지한다. PDF 업로드/자료 관리/
+    테스트용 챗봇은 모두 챗봇 화면(chat_page.py, 관리자의 메인 화면)에 모아뒀고, 이 바는
+    지금이 관리자 모드라는 것만 항상 눈에 띄게 알려주는 용도다."""
     with ui.row().classes("w-full items-center py-3.5 kdt-admin-bar").style(
         f"background:{ADMIN_CONSOLE_BG};"
     ):
@@ -427,27 +426,9 @@ def _admin_console_bar():
             with ui.row().classes("items-center gap-2"):
                 ui.icon("admin_panel_settings").style(f"color:{GOLD}; font-size:1.35rem;")
                 ui.label("관리자 모드").classes("font-extrabold text-sm text-white")
-            ui.label("PDF를 올리면 벡터DB에 바로 반영되어 챗봇 답변에 곧장 쓰입니다.").classes(
+            ui.label("PDF 업로드/자료 관리와 테스트용 챗봇은 아래 챗봇 화면에서 이용하세요.").classes(
                 "text-xs"
             ).style("color:#B7BCC9;")
-
-            status_label = ui.label("").classes("text-xs")
-
-            async def _handle_upload(e):
-                content = await e.file.read()
-                status_label.text = "업로드 및 반영 중..."
-                status_label.style("color:#B7BCC9;")
-                try:
-                    data = await upload_pdf(e.file.name, content)
-                    status_label.text = f"{data['filename']} 반영 완료 (청크 {data['chunks_added']}개 추가)"
-                    status_label.style("color:#4ADE80;")
-                except ModelServiceError as err:
-                    status_label.text = str(err)
-                    status_label.style("color:#F87171;")
-
-            ui.upload(on_upload=_handle_upload, auto_upload=True, label="PDF 업로드").props(
-                "accept=.pdf flat dense dark"
-            ).classes("w-64 ml-auto")
 
 
 def _nav_pills(current_path: str, cohort: str):
@@ -489,12 +470,18 @@ def frame(current_path: str = ""):
         ):
             _brand_mark()
             if admin:
-                with ui.row().classes("items-center gap-1.5"):
-                    ui.icon("admin_panel_settings").style(f"color:{ACCENT}; font-size:1.1rem;")
-                    ui.label("관리자 모드").classes("text-xs font-bold").style(f"color:{ACCENT};")
-            elif cohort:
-                _nav_pills(current_path, cohort)
-            render_login_widget()
+                # "관리자 모드" 표시는 로그인(열쇠) 버튼과 한 묶음으로 묶어서 헤더 오른쪽 끝에
+                # 붙인다 - justify-between에 그냥 맡기면 3번째 자식으로 취급돼 화면 가운데
+                # 어중간한 위치에 떠 보였다.
+                with ui.row().classes("items-center gap-3"):
+                    with ui.row().classes("items-center gap-1.5"):
+                        ui.icon("admin_panel_settings").style(f"color:{ACCENT}; font-size:1.1rem;")
+                        ui.label("관리자 모드").classes("text-xs font-bold").style(f"color:{ACCENT};")
+                    render_login_widget()
+            else:
+                if cohort:
+                    _nav_pills(current_path, cohort)
+                render_login_widget()
 
     if admin:
         _admin_console_bar()

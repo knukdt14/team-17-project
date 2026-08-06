@@ -3,7 +3,11 @@ services:
     build: ./model
     env_file: .env
     volumes:
-      - ./data/raw:/app/data/raw:ro
+      # 관리자가 "기본 제공" 규정집도 목록에서 삭제할 수 있어야 해서(요청 사항) 쓰기 가능하게
+      # 마운트한다. 예전엔 :ro였는데, 삭제 시 벡터DB에서는 빠지지만 실제 파일 unlink()가
+      # Read-only file system으로 실패해 500이 나면서 검색 인덱스와 디스크 상태가 어긋나는
+      # 문제가 있었다. 삭제된 원본 PDF는 git으로 추적되므로 필요하면 git checkout으로 복구 가능.
+      - ./data/raw:/app/data/raw
       - model_vectorstore:/app/vectorstore
       - model_uploads:/app/uploads
       # Qwen2.5-7B 가중치(~4GB)를 컨테이너 재생성마다 다시 받지 않도록 HF 캐시를 볼륨으로 유지

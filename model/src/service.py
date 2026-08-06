@@ -25,8 +25,10 @@ from retriever import (
     get_hybrid_retriever,
     chunks_to_documents,
     persist_store,
+    ids_by_source,
+    build_scoped_hybrid_retriever,
 )
-from rag_chain import get_answer_chain, format_docs
+from rag_chain import get_answer_chain, format_docs, generate_faq_questions
 
 # 도커 컨테이너 기준 기본 경로. 로컬(비도커)에서 테스트할 때는 DATA_DIR/VECTORSTORE_DIR/UPLOAD_DIR
 # 환경변수로 리포지토리 루트 기준 상대경로를 넘겨서 오버라이드한다.
@@ -53,8 +55,10 @@ TIER_LLM_KEYS = {"free": "solar", "paid": "groq_llama"}
 PROMPT_STYLE = "service"
 USE_HYBRID_RETRIEVAL = True
 TOP_K = 5
+# 관리자 테스트용 챗봇의 검색 대상(업로드 PDF)이 무한정 늘어나지 않도록 제한.
+MAX_UPLOADED_FILES = 5
 
-state = {"vectorstore": None, "chunks": None, "retriever": None, "chains": {}}
+state = {"vectorstore": None, "chunks": None, "retriever": None, "retriever_uploaded": None, "chains": {}}
 gpu_lock = threading.Lock()  # 임베딩/LLM 인스턴스 1개 -> 동시 요청을 직렬화해서 안전하게 처리
 
 
@@ -62,6 +66,25 @@ def _build_retriever():
     if USE_HYBRID_RETRIEVAL:
         return get_hybrid_retriever(state["vectorstore"], state["chunks"], k=TOP_K)
     return get_retriever(state["vectorstore"], k=TOP_K)
+
+
+def _uploaded_filenames() -> set[str]:
+    """관리자가 업로드해서 UPLOAD_DIR에 남아있는 PDF 파일명 집합 (기본 제공 규정집과 구분)."""
+    return {p.name for p in UPLOAD_DIR.glob("*.pdf")}
+
+
+def _all_pdf_paths() -> list[Path]:
+    return sorted(Path(DATA_DIR).glob("*.pdf")) + sorted(UPLOAD_DIR.glob("*.pdf"))
+
+
+def _rebuild_uploaded_retriever():
+    """관리자 테스트용 챗봇(scope="uploaded")이 쓰는, 업로드된 파일만으로 이뤄진 리트리버를
+    현재 상태 기준으로 다시 만든다. 업로드된 파일이 하나도 없으면 None(검색 불가)이 된다."""
+    uploaded = _uploaded_filenames()
+    uploaded_chunks = [c for c in state["chunks"] if c.source in uploaded]
+    state["retriever_uploaded"] = build_scoped_hybrid_retriever(
+        uploaded_chunks, EMBEDDING_MODEL_KEY, embedding_device=EMBEDDING_DEVICE, k=TOP_K
+    )
 
 
 @asynccontextmanager
@@ -81,6 +104,7 @@ async def lifespan(app: FastAPI):
         embedding_device=EMBEDDING_DEVICE,
     )
     state["retriever"] = _build_retriever()
+    _rebuild_uploaded_retriever()
     state["chains"] = {
         tier: get_answer_chain(llm_key=llm_key, prompt_style=PROMPT_STYLE)
         for tier, llm_key in TIER_LLM_KEYS.items()
@@ -103,12 +127,23 @@ app.add_middleware(
 class AskRequest(BaseModel):
     question: str
     tier: str = "free"
+    # "all": 기본 규정집 + 업로드 파일 전체(일반 사용자용). "uploaded": 관리자가 업로드한
+    # 파일만(관리자 테스트용 챗봇).
+    scope: str = "all"
 
 
 class IngestResponse(BaseModel):
     message: str
     filename: str
     chunks_added: int
+    faq_questions: list[str] = []
+
+
+class FileInfo(BaseModel):
+    filename: str
+    origin: str  # "base"(기본 제공 규정집) | "uploaded"(관리자 업로드)
+    size_bytes: int
+    chunk_count: int
 
 
 @app.get("/health")
@@ -176,13 +211,23 @@ def _best_snippet(answer: str, text: str) -> str:
     return "\n".join(snippet_lines)
 
 
-def _stream_answer(question: str, tier: str):
+def _stream_answer(question: str, tier: str, scope: str = "all"):
     """검색 -> LLM 스트리밍 -> 마지막에 근거 문서(sources) 순서로 SSE 이벤트를 흘려보낸다.
     generate가 끝나기 전에 다음 요청이 GPU를 밟지 않도록, 스트림 소비가 끝날 때까지 gpu_lock을 쥔다."""
     chain = state["chains"].get(tier) or state["chains"]["free"]
+
+    if scope == "uploaded":
+        retriever = state["retriever_uploaded"]
+        if retriever is None:
+            yield _sse({"error": "테스트할 업로드된 PDF가 없습니다. 먼저 PDF를 업로드해주세요."})
+            yield "data: [DONE]\n\n"
+            return
+    else:
+        retriever = state["retriever"]
+
     answer_parts = []
     with gpu_lock:
-        docs = state["retriever"].invoke(question)
+        docs = retriever.invoke(question)
         context = format_docs(docs)
         for token in chain.stream({"context": context, "question": question}):
             answer_parts.append(token)
@@ -213,15 +258,34 @@ def ask(req: AskRequest):
     if not req.question.strip():
         raise HTTPException(status_code=400, detail="질문을 입력하세요.")
 
-    return StreamingResponse(_stream_answer(req.question, req.tier), media_type="text/event-stream")
+    return StreamingResponse(
+        _stream_answer(req.question, req.tier, req.scope), media_type="text/event-stream"
+    )
 
 
 @app.post("/ingest", response_model=IngestResponse)
 def ingest(file: UploadFile = File(...)):
-    """PDF 파일을 받아 청킹 후 기존 벡터스토어 + BM25 코퍼스에 추가한다."""
+    """PDF 파일을 받아 청킹 후 기존 벡터스토어 + BM25 코퍼스에 추가하고, 관리자가 업로드
+    직후 바로 테스트해볼 수 있도록 문서 내용 기반 추천 질문 3개를 같이 만들어 돌려준다."""
     filename = file.filename
+    try:
+        # 브라우저는 파일명을 UTF-8로 보내지만, multipart Content-Disposition 헤더를
+        # latin-1로만 디코딩하는 경로를 타면 한글 파일명이 mojibake로 깨짐
+        # (예: "한글.pdf" -> "ÇÑ±Û.pdf")가 실측으로 확인됨. latin-1로 되돌려 원래
+        # UTF-8 바이트를 복원한다 - 이미 정상 디코딩된 경우는 여기서 예외가 나서 그냥 통과.
+        filename = filename.encode("latin-1").decode("utf-8")
+    except (UnicodeDecodeError, UnicodeEncodeError):
+        pass
+
     if not filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="PDF 파일만 업로드 가능합니다.")
+
+    existing_uploads = _uploaded_filenames()
+    if filename not in existing_uploads and len(existing_uploads) >= MAX_UPLOADED_FILES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"업로드 가능한 PDF는 최대 {MAX_UPLOADED_FILES}개까지입니다. 기존 파일을 삭제한 후 다시 시도해주세요.",
+        )
 
     dest = UPLOAD_DIR / filename
     dest.write_bytes(file.file.read())
@@ -236,16 +300,67 @@ def ingest(file: UploadFile = File(...)):
         persist_store(state["vectorstore"], VECTORSTORE_BACKEND, EMBEDDING_MODEL_KEY, base_dir=VECTORSTORE_DIR)
         state["chunks"].extend(new_chunks)
         state["retriever"] = _build_retriever()
+        _rebuild_uploaded_retriever()
         state["chains"] = {
             tier: get_answer_chain(llm_key=llm_key, prompt_style=PROMPT_STYLE)
             for tier, llm_key in TIER_LLM_KEYS.items()
         }
 
+        try:
+            faq_text = "\n\n".join(c.text for c in new_chunks[:8])
+            faq_questions = generate_faq_questions(faq_text, llm_key=TIER_LLM_KEYS["free"], n=4)
+        except Exception as e:
+            # FAQ 생성은 부가 기능이라, 실패해도 업로드 자체(반영)는 성공으로 처리한다.
+            print(f"[model] FAQ 질문 생성 실패: {e}")
+            faq_questions = []
+
     return IngestResponse(
         message="업로드 및 벡터DB 반영 완료",
         filename=filename,
         chunks_added=len(new_chunks),
+        faq_questions=faq_questions,
     )
+
+
+@app.get("/files", response_model=list[FileInfo])
+def list_files():
+    """현재 검색에 반영된 모든 PDF(기본 제공 규정집 + 관리자 업로드분) 목록을 돌려준다."""
+    uploaded = _uploaded_filenames()
+    counts: dict[str, int] = {}
+    for c in state["chunks"]:
+        counts[c.source] = counts.get(c.source, 0) + 1
+
+    return [
+        FileInfo(
+            filename=path.name,
+            origin="uploaded" if path.name in uploaded else "base",
+            size_bytes=path.stat().st_size,
+            chunk_count=counts.get(path.name, 0),
+        )
+        for path in _all_pdf_paths()
+    ]
+
+
+@app.delete("/files/{filename}")
+def delete_file(filename: str):
+    """PDF 파일을 벡터DB/BM25 코퍼스/디스크에서 모두 제거한다. 기본 제공 규정집도 예외
+    없이 삭제 가능 - 관리자가 직접 요청한 관리 기능이므로 별도 보호를 두지 않는다."""
+    path = next((p for p in _all_pdf_paths() if p.name == filename), None)
+    if path is None:
+        raise HTTPException(status_code=404, detail="파일을 찾을 수 없습니다.")
+
+    with gpu_lock:
+        source_ids = ids_by_source(state["vectorstore"]).get(filename, [])
+        if source_ids:
+            state["vectorstore"].delete(ids=source_ids)
+            persist_store(state["vectorstore"], VECTORSTORE_BACKEND, EMBEDDING_MODEL_KEY, base_dir=VECTORSTORE_DIR)
+        state["chunks"] = [c for c in state["chunks"] if c.source != filename]
+        state["retriever"] = _build_retriever()
+        _rebuild_uploaded_retriever()
+
+    path.unlink()
+
+    return {"message": "삭제 완료", "filename": filename}
 
 
 if __name__ == "__main__":

@@ -73,6 +73,37 @@ PROMPT_SERVICE = ChatPromptTemplate.from_template(
 
 PROMPT_STYLES = {"default": PROMPT_DEFAULT, "service": PROMPT_SERVICE}
 
+# 관리자가 PDF를 업로드했을 때, 그 문서만 보고 "훈련생이 실제로 물어볼 법한 질문" 3개를
+# 만들어서 업로드 직후 바로 테스트해볼 수 있게 해주는 프롬프트.
+FAQ_GEN_PROMPT = ChatPromptTemplate.from_template(
+    """
+아래는 방금 업로드된 문서의 일부 내용입니다. 이 문서를 처음 보는 훈련생이 실제로
+궁금해하며 챗봇에 물어볼 법한 질문을 정확히 {n}개 만들어주세요.
+
+작성 규칙:
+- 반드시 아래 [문서 내용]에 실제로 담긴 내용에 대한 질문만 만드세요. 문서에 없는
+  내용을 지어내지 마세요.
+- 한 줄에 질문 하나씩, 번호/불릿 기호 없이 질문 문장만 작성하세요.
+- 반드시 한국어로만 작성하세요.
+
+[문서 내용]
+{context}
+
+[질문 {n}개]
+"""
+)
+
+
+def generate_faq_questions(text: str, llm_key: str = "solar", n: int = 3) -> list[str]:
+    """업로드된 문서 내용 일부를 LLM에 보여주고, 자주 물어볼 법한 질문 n개를 뽑아낸다.
+    문서가 길어도 프롬프트는 짧게 유지하려고 호출하는 쪽(service.py)에서 앞부분 위주로
+    잘라서 넘긴다."""
+    llm = get_llm(llm_key)
+    chain = FAQ_GEN_PROMPT | llm | StrOutputParser()
+    raw = chain.invoke({"context": text, "n": n})
+    questions = [re.sub(r"^[\-\*\d.)\s]+", "", line).strip() for line in raw.splitlines()]
+    return [q for q in questions if q][:n]
+
 # Groq에서 지금 서빙 중인 모델은 계속 바뀌므로, 404/decommissioned 에러가 나면
 # console.groq.com/docs/models 에서 현재 목록을 확인하고 .env의 GROQ_*_MODEL로 덮어쓰면 됨
 GROQ_MODELS = {

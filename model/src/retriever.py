@@ -131,6 +131,31 @@ def get_or_build_store(
         return build_faiss(model_key, chunks, base_dir, embedding_device=embedding_device)
 
 
+def ids_by_source(vectorstore: FAISS) -> dict[str, List[str]]:
+    """docstore에서 source(파일명)별 벡터 ID 목록을 만든다. LangChain FAISS는 소스 단위
+    삭제를 기본 제공하지 않고 delete(ids=...)만 지원하므로, 관리자가 특정 PDF를 목록에서
+    삭제할 때 이 매핑으로 해당 파일의 ID들을 찾아 넘긴다."""
+    mapping: dict[str, List[str]] = {}
+    for doc_id, doc in vectorstore.docstore._dict.items():
+        mapping.setdefault(doc.metadata.get("source"), []).append(doc_id)
+    return mapping
+
+
+def build_scoped_hybrid_retriever(
+    chunks: List[Chunk], model_key: str, embedding_device: str | None = None, k: int = 5, dense_weight: float = 0.5
+):
+    """전체 코퍼스가 아니라 주어진 chunks만으로 하이브리드 리트리버를 즉석에서 만든다(디스크에
+    저장하지 않음). 관리자 테스트용 챗봇처럼 "방금 업로드한 문서만" 검색 범위를 좁혀야 할 때,
+    메인 벡터스토어에 metadata filter만 걸면 필터 적용 전에 이미 상위 fetch_k개로 추려버려서
+    - 전체 코퍼스 대비 대상 문서가 적을수록 - 관련 문서가 아예 걸러지는 문제가 있어 별도
+    스토어로 완전히 분리한다. 대상 chunks가 없으면 None을 반환한다."""
+    if not chunks:
+        return None
+    embeddings = get_embedding_model(model_key, device=embedding_device)
+    store = FAISS.from_documents(chunks_to_documents(chunks), embeddings)
+    return get_hybrid_retriever(store, chunks, k=k, dense_weight=dense_weight)
+
+
 def persist_store(vectorstore, backend: Literal["chroma", "faiss"], model_key: str, base_dir: str = "."):
     """add_documents()로 벡터DB에 문서를 추가한 뒤 디스크 캐시에도 반영한다.
     FAISS는 save_local()을 명시적으로 불러야 디스크에 반영됨(안 하면 컨테이너 재시작 시
