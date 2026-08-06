@@ -8,7 +8,7 @@ schedule_page.py
 
 from nicegui import app, ui
 
-from cohorts import get_cohort
+from cohorts import get_cohort, get_posters
 from theme import ACCENT, ACCENT_DARK, ACCENT_SOFT, BORDER, GOLD, INK, MUTED, page_header
 
 
@@ -19,7 +19,20 @@ def schedule_page():
         ui.label("먼저 기수를 선택해주세요.").classes("text-gray-500 m-4")
         return
 
-    page_header("event", f"{cohort} 교육 일정", data.get("title", ""), kicker="PROGRAM SCHEDULE")
+    def _intro_button():
+        ui.button(
+            f"{cohort} 소개 보기",
+            icon="auto_stories",
+            on_click=lambda: ui.navigate.to("/intro"),
+        ).props("unelevated no-caps color=primary")
+
+    page_header(
+        "event",
+        f"{cohort} 교육 일정",
+        data.get("title", ""),
+        kicker="PROGRAM SCHEDULE",
+        right=_intro_button if get_posters(cohort) else None,
+    )
 
     period = data.get("period", {})
     location = data.get("location", {})
@@ -68,7 +81,8 @@ def schedule_page():
                 ui.label("모집 기간").classes("font-bold text-sm").style(f"color:{INK};")
             ui.label(data.get("apply_period", "정보 없음")).classes("text-sm").style(f"color:{MUTED};")
         contact = data.get("contact", {})
-        if contact:
+        homepage = data.get("homepage")
+        if contact or homepage:
             with ui.card().classes("p-5"):
                 with ui.row().classes("items-center gap-2 mb-2"):
                     with ui.element("div").classes(
@@ -78,6 +92,12 @@ def schedule_page():
                     ui.label("교육 문의").classes("font-bold text-sm").style(f"color:{INK};")
                 for k, v in contact.items():
                     ui.label(f"{k} · {v}").classes("text-sm").style(f"color:{MUTED};")
+                if homepage:
+                    with ui.row().classes("items-center gap-1 mt-1"):
+                        ui.icon("open_in_new", size="13px").style(f"color:{ACCENT};")
+                        ui.link("홈페이지 바로가기", homepage, new_tab=True).classes(
+                            "text-sm font-bold no-underline"
+                        ).style(f"color:{ACCENT};")
 
     benefits = data.get("benefits", [])
     if benefits:

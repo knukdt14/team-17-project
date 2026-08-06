@@ -464,10 +464,10 @@ def frame(current_path: str = ""):
 
 
 def page_header(icon: str, title: str, subtitle: str = "", *, kicker: str = "", logo: str | None = None, right=None):
-    """오른쪽에 부가 컨트롤(예: 챗봇의 무료/유료 토글)을 같이 놓고 싶을 때는
-    right에 그 내용을 그리는 콜백을 넘기면 된다. icon은 이모지가 아니라 Material 아이콘
-    이름(예: "forum", "event", "place", "groups")을 받는다. logo를 넘기면 아이콘 대신
-    그 이미지를 보여준다(예: 챗봇 페이지의 경북대 로고). kicker는 제목 위에 붙는
+    """오른쪽에 부가 컨트롤(예: 챗봇의 무료/유료 토글, 일정 페이지의 "소개 보기" 버튼)을 같이
+    놓고 싶을 때는 right에 그 내용을 그리는 콜백을 넘기면 된다. icon은 이모지가 아니라
+    Material 아이콘 이름(예: "forum", "event", "place", "groups")을 받는다. logo를 넘기면
+    아이콘 대신 그 이미지를 보여준다(예: 챗봇 페이지의 경북대 로고). kicker는 제목 위에 붙는
     골드색 영문 소문구(예: "PROGRAM SCHEDULE")로, 없으면 생략된다."""
     with ui.row().classes("items-center justify-between w-full mb-6 flex-wrap gap-3 kdt-fade-up"):
         with ui.row().classes("items-center gap-3"):
