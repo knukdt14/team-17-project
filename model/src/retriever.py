@@ -144,12 +144,38 @@ def get_retriever(vectorstore, search_type: str = "similarity", k: int = 5):
     return vectorstore.as_retriever(search_type=search_type, search_kwargs={"k": k})
 
 
-def get_hybrid_retriever(vectorstore, chunks: List[Chunk], k: int = 5, dense_weight: float = 0.5):
+def get_hybrid_retriever(
+    vectorstore,
+    chunks: List[Chunk],
+    k: int = 5,
+    dense_weight: float = 0.5,
+    allowed_sources: set | None = None,
+):
     """임베딩(dense) 검색 + BM25(키워드) 검색을 Reciprocal Rank Fusion으로 합친 하이브리드 리트리버.
     "만 75세 이상" 같이 숫자/고유명사 하나로 정답이 갈리는 질문은, 그 항목이 문서 안에서
     비슷한 다른 항목들과 섞여 있으면 임베딩 유사도만으로는 순위가 크게 밀리는 문제가 실측으로
-    확인됨 - BM25는 정확한 단어 일치를 보므로 이런 경우를 보완해줌."""
-    dense_retriever = vectorstore.as_retriever(search_kwargs={"k": k})
+    확인됨 - BM25는 정확한 단어 일치를 보므로 이런 경우를 보완해줌.
+
+    allowed_sources를 주면 그 파일명(source) 집합에 속한 문서만 검색 대상으로 삼는다 - 기수별
+    모집공고처럼 형식이 거의 같은 문서가 여러 개 섞여 있을 때(예: "본교육 장소는 어디인가요?"
+    질문이 13/14/15/17기 공고 전부와 다 비슷하게 매칭됨), 지금 선택된 기수 문서만 보게 좁혀서
+    다른 기수 내용이 답에 섞여 들어오는 걸 막는다. dense 검색은 FAISS의 filter 콜백으로 걸러내고
+    (같은 인덱스를 재사용하므로 재임베딩 비용이 없다), BM25Retriever는 검색 시점 필터를 지원하지
+    않아서 아예 그 문서들만으로 다시 구성한다."""
+    if allowed_sources is not None:
+        dense_retriever = vectorstore.as_retriever(
+            search_kwargs={
+                "k": k,
+                "filter": lambda meta: meta.get("source") in allowed_sources,
+                # filter가 있으면 fetch_k개를 먼저 뽑은 뒤 필터링하므로, 기수 문서가 상위
+                # k개 안에 없어도 걸러지지 않도록 넉넉히 가져온다.
+                "fetch_k": max(50, k * 10),
+            }
+        )
+        chunks = [c for c in chunks if c.source in allowed_sources]
+    else:
+        dense_retriever = vectorstore.as_retriever(search_kwargs={"k": k})
+
     bm25_retriever = BM25Retriever.from_documents(chunks_to_documents(chunks))
     bm25_retriever.k = k
     return EnsembleRetriever(

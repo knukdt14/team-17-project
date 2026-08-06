@@ -20,17 +20,25 @@ class ModelServiceError(Exception):
 
 
 async def ask_stream(
-    question: str, on_token, history: list[dict] | None = None, tier: str = "free"
+    question: str,
+    on_token,
+    history: list[dict] | None = None,
+    tier: str = "free",
+    cohort: str | None = None,
 ) -> list[dict]:
     """질문을 model의 /ask(SSE)로 보내고, 토큰이 도착할 때마다 on_token(token)을 호출한다.
     history는 아직 model이 안 받아도 무해하게 무시되므로(Pydantic 기본 동작이 정의 안 된 필드를
     그냥 버림) 미리 실어 보내도 안전하다. 스트림이 끝나면 근거 문서(sources) 리스트를 반환한다.
 
     tier: "free"(Solar) 또는 "paid"(Groq Llama) - 무료/유료 버전 데모용 토글값을 그대로 넘긴다.
+    cohort: 현재 선택된 기수(예: "13기"). model이 그 기수의 모집공고만 검색하도록 좁혀서,
+    "본교육 장소가 어디인가요?" 같은 질문에 다른 기수 내용이 섞여 답변되는 걸 막는다.
     """
     payload: dict = {"question": question, "tier": tier}
     if history:
         payload["history"] = history
+    if cohort:
+        payload["cohort"] = cohort
 
     sources: list = []
     try:
