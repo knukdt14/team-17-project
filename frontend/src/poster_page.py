@@ -6,12 +6,14 @@ poster_page.py
 - 이미지마다 +/- 버튼으로 50%씩 확대/축소할 수 있고, 더블클릭할 때마다 50%씩 더 확대되다가
   최대 배율을 넘으면 100%로 돌아온다. 확대된 상태에서는 마우스로 드래그해서 이동할 수 있다.
 - 이미지 위에 마우스가 올라가 있는 동안은 키보드 +/-로도 확대/축소된다.
+- main.py의 ui.sub_pages가 이 함수를 "/intro" 콘텐츠로 호출하므로 @ui.page 데코레이터와
+  frame() 호출은 여기서 하지 않는다(헤더는 root_page에서 한 번만 그린다).
 """
 
 from nicegui import app, events, ui
 
 from cohorts import get_cohort, get_posters
-from theme import ACCENT, MUTED, frame, page_header
+from theme import ACCENT, MUTED, page_header
 
 _ZOOM_STEP = 0.5
 _ZOOM_MIN = 0.5
@@ -102,25 +104,24 @@ def _zoomable_image(poster: dict):
             ).props("round dense flat size=sm").tooltip("이미지 다운로드")
 
 
-@ui.page("/intro")
 def poster_page():
-    frame(current_path="/schedule")
-
     cohort = app.storage.user.get("selected_cohort")
     if not cohort:
         ui.label("먼저 기수를 선택해주세요.").classes("text-gray-500 m-4")
         return
 
     posters = get_posters(cohort)
-    page_header("📋", f"{cohort} 소개", get_cohort(cohort).get("title", ""))
+    page_header(
+        "auto_stories", f"{cohort} 소개", get_cohort(cohort).get("title", ""), kicker="COHORT INTRO"
+    )
 
     if not posters:
         ui.label("등록된 소개 이미지가 없습니다.").classes("text-gray-500")
     else:
-        with ui.column().classes("w-full items-center gap-8"):
+        with ui.column().classes("w-full items-center gap-8 kdt-reveal"):
             for poster in posters:
                 _zoomable_image(poster)
 
-    ui.button("← 일정으로 돌아가기", on_click=lambda: ui.navigate.to("/schedule")).props("flat").classes(
-        "mt-8"
-    ).style(f"color:{ACCENT};")
+    ui.button(
+        "일정으로 돌아가기", icon="arrow_back", on_click=lambda: ui.navigate.to("/schedule")
+    ).props("flat no-caps").classes("mt-8").style(f"color:{ACCENT};")

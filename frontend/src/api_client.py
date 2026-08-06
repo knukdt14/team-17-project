@@ -19,12 +19,16 @@ class ModelServiceError(Exception):
     """model 호출 실패를 사용자에게 보여줄 메시지와 함께 감싸는 예외."""
 
 
-async def ask_stream(question: str, on_token, history: list[dict] | None = None) -> list[dict]:
+async def ask_stream(
+    question: str, on_token, history: list[dict] | None = None, tier: str = "free"
+) -> list[dict]:
     """질문을 model의 /ask(SSE)로 보내고, 토큰이 도착할 때마다 on_token(token)을 호출한다.
     history는 아직 model이 안 받아도 무해하게 무시되므로(Pydantic 기본 동작이 정의 안 된 필드를
     그냥 버림) 미리 실어 보내도 안전하다. 스트림이 끝나면 근거 문서(sources) 리스트를 반환한다.
+
+    tier: "free"(Solar) 또는 "paid"(Groq Llama) - 무료/유료 버전 데모용 토글값을 그대로 넘긴다.
     """
-    payload: dict = {"question": question}
+    payload: dict = {"question": question, "tier": tier}
     if history:
         payload["history"] = history
 
@@ -35,7 +39,7 @@ async def ask_stream(question: str, on_token, history: list[dict] | None = None)
                 if resp.status_code == 429:
                     # 동시 요청이 몰려 model이 바쁠 때를 대비한 안내 (model이 아직 429를
                     # 내려주지 않아도 이 분기는 미리 준비해둔 것)
-                    raise ModelServiceError("🚦 지금 다른 사용자의 답변을 생성하고 있어요. 잠시 후 다시 시도해주세요.")
+                    raise ModelServiceError("지금 다른 사용자의 답변을 생성하고 있어요. 잠시 후 다시 시도해주세요.")
                 resp.raise_for_status()
                 async for line in resp.aiter_lines():
                     if not line or not line.startswith("data: "):
@@ -45,7 +49,7 @@ async def ask_stream(question: str, on_token, history: list[dict] | None = None)
                         break
                     event = json.loads(event_raw)
                     if "error" in event:
-                        raise ModelServiceError(f"❌ 죄송합니다, 답변을 가져오지 못했습니다. ({event['error']})")
+                        raise ModelServiceError(f"죄송합니다, 답변을 가져오지 못했습니다. ({event['error']})")
                     if "sources" in event:
                         sources.extend(event["sources"])
                         continue
@@ -53,13 +57,13 @@ async def ask_stream(question: str, on_token, history: list[dict] | None = None)
                     if token:
                         on_token(token)
     except httpx.TimeoutException as e:
-        raise ModelServiceError("⏱️ 죄송합니다, 응답 시간이 초과되었습니다. 잠시 후 다시 시도해주세요.") from e
+        raise ModelServiceError("죄송합니다, 응답 시간이 초과되었습니다. 잠시 후 다시 시도해주세요.") from e
     except httpx.ConnectError as e:
-        raise ModelServiceError("🔌 죄송합니다, 서버에 연결할 수 없습니다. 잠시 후 다시 시도해주세요.") from e
+        raise ModelServiceError("죄송합니다, 서버에 연결할 수 없습니다. 잠시 후 다시 시도해주세요.") from e
     except ModelServiceError:
         raise
     except httpx.HTTPError as e:
-        raise ModelServiceError(f"❌ 죄송합니다, 답변을 가져오지 못했습니다. ({e})") from e
+        raise ModelServiceError(f"죄송합니다, 답변을 가져오지 못했습니다. ({e})") from e
 
     return sources
 
@@ -76,9 +80,9 @@ async def upload_pdf(filename: str, content: bytes) -> dict:
             return resp.json()
     except httpx.TimeoutException as e:
         raise ModelServiceError(
-            "⏱️ 업로드 요청이 시간 초과되었습니다. 파일 크기를 확인하거나 잠시 후 다시 시도해주세요."
+            "업로드 요청이 시간 초과되었습니다. 파일 크기를 확인하거나 잠시 후 다시 시도해주세요."
         ) from e
     except httpx.ConnectError as e:
-        raise ModelServiceError("🔌 서버에 연결할 수 없습니다. 잠시 후 다시 시도해주세요.") from e
+        raise ModelServiceError("서버에 연결할 수 없습니다. 잠시 후 다시 시도해주세요.") from e
     except httpx.HTTPError as e:
-        raise ModelServiceError(f"❌ 업로드 실패: {e}") from e
+        raise ModelServiceError(f"업로드 실패: {e}") from e

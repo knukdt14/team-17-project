@@ -10,8 +10,8 @@ import os
 
 COHORTS = {
     "13기": {
-        "icon": "🎓",
-        "subtitle": "경북대학교 데이터융복합연구원",
+        "logo": "logo_13.png",
+        "subtitle": "포항시X경북대학교",
         "title": "[포항시X경북대학교] AI·빅데이터 전문가 양성과정 13기",
         "period": {
             "사전교육": "26.2.2.(월) ~ 26.2.13.(금) · 2주(30시간)",
@@ -32,7 +32,7 @@ COHORTS = {
         "homepage": "https://datainstitute.knu.ac.kr/contents/edu/selectEduView.do?edu_id=164&end=Y&menuId=343",
     },
     "14기": {
-        "icon": "🚗",
+        "logo": "logo_14.png",
         "subtitle": "아진산업 채용연계",
         "title": "아진산업 채용예정자 부트캠프 (AI·빅데이터 전문가 양성과정 14기)",
         "period": {
@@ -55,7 +55,7 @@ COHORTS = {
         "homepage": "https://datainstitute.knu.ac.kr/contents/edu/selectEduView.do?edu_id=177&end=Y&menuId=343",
     },
     "15기": {
-        "icon": "⚙️",
+        "logo": "logo_15.jpg",
         "subtitle": "티에이치엔 채용연계",
         "title": "티에이치엔 채용예정자 부트캠프 (AI·빅데이터 전문가 양성과정 15기)",
         "period": {
@@ -78,7 +78,7 @@ COHORTS = {
         "homepage": "https://datainstitute.knu.ac.kr/contents/edu/selectEduView.do?edu_id=180&end=Y&menuId=343",
     },
     "17기": {
-        "icon": "🔋",
+        "logo": "logo_17.png",
         "subtitle": "피엔티 채용연계",
         "title": "피엔티 채용예정자 부트캠프 (AI·빅데이터 전문가 양성과정 17기)",
         "period": {

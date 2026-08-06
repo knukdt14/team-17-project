@@ -21,6 +21,8 @@ map_page.py
   입력하는 텍스트 필드 + "경로 찾기" 버튼을 기본으로 제공하고, 원하면 "내 위치 자동으로
   사용" 버튼으로 Geolocation을 켤 수 있게 옵션으로만 둔다.
 - KAKAO_JS_KEY가 없으면 지도 없이 딥링크 버튼만 보여준다.
+- main.py의 ui.sub_pages가 이 함수를 "/map" 콘텐츠로 호출하므로 @ui.page 데코레이터와
+  frame() 호출은 여기서 하지 않는다(헤더는 root_page에서 한 번만 그린다).
 """
 
 import json
@@ -31,7 +33,7 @@ from urllib.parse import quote
 from nicegui import app, ui
 
 from cohorts import get_main_location
-from theme import ACCENT, INK, MUTED, frame, page_header
+from theme import ACCENT, INK, MUTED, page_header
 
 KAKAO_JS_KEY = os.environ.get("KAKAO_JS_KEY", "")
 
@@ -56,23 +58,20 @@ _KNOWN_ADDRESSES = {
 }
 
 
-@ui.page("/map")
 def map_page():
-    frame(current_path="/map")
-
     cohort = app.storage.user.get("selected_cohort")
     location = get_main_location(cohort)
 
     if not location:
-        page_header("📍", "오시는길")
+        page_header("place", "오시는길")
         ui.label("먼저 기수를 선택해주세요.").classes("text-gray-500")
         return
 
-    page_header("📍", "오시는길", "")
+    page_header("place", "오시는길", "", kicker="LOCATION")
 
     search_link = f"https://map.kakao.com/link/search/{quote(location)}"
 
-    with ui.card().classes("w-full p-5 mb-4"):
+    with ui.card().classes("w-full p-5 mb-4 kdt-fade-up"):
         ui.label(cohort).classes("text-xs font-bold").style(f"color:{ACCENT};")
         ui.label(location).classes("text-lg font-extrabold mt-0.5").style(f"color:{INK};")
 
@@ -80,7 +79,7 @@ def map_page():
         ui.label("지도 미리보기는 KAKAO_JS_KEY가 설정되면 표시됩니다. 지금은 길찾기 링크만 이용해주세요.").classes(
             "text-sm mb-3"
         ).style(f"color:{MUTED};")
-        ui.link("🚗 카카오맵으로 길찾기", search_link, new_tab=True).classes(
+        ui.link("카카오맵으로 길찾기", search_link, new_tab=True).classes(
             "block w-full text-center bg-yellow-300 text-gray-900 font-bold rounded-xl py-3 no-underline"
         )
         return
@@ -89,7 +88,7 @@ def map_page():
     known_address = _KNOWN_ADDRESSES.get(keyword)
 
     # 출발지 수동 입력 - 자동으로 위치를 잡지 않고, 사용자가 직접 입력한 걸 우선한다.
-    with ui.card().classes("w-full p-4 mb-4"):
+    with ui.card().classes("w-full p-4 mb-4 kdt-fade-up"):
         ui.label("출발지에서 경로 보기").classes("text-sm font-bold mb-2").style(f"color:{INK};")
         with ui.row().classes("w-full items-center gap-2 flex-nowrap"):
             origin_input = ui.input(
@@ -103,17 +102,18 @@ def map_page():
                     return
                 ui.run_javascript(f"window.kdtRouteFromText && window.kdtRouteFromText({json.dumps(text)});")
 
-            ui.button("경로 찾기", on_click=_find_route_from_text).props("no-caps unelevated").style(
-                f"background:{ACCENT};color:#fff;"
+            ui.button("경로 찾기", icon="directions", on_click=_find_route_from_text).props(
+                "no-caps unelevated color=primary"
             )
         ui.button(
-            "📍 내 위치 자동으로 사용",
+            "내 위치 자동으로 사용",
+            icon="my_location",
             on_click=lambda: ui.run_javascript(
                 "window.kdtRouteFromGeolocation && window.kdtRouteFromGeolocation();"
             ),
         ).props("flat no-caps dense").classes("mt-1 text-xs px-0").style(f"color:{MUTED};")
 
-    with ui.card().classes("w-full p-3"):
+    with ui.card().classes("w-full p-3 kdt-reveal"):
         ui.html(
             f"""
             <div id="kdt-map" style="width:100%;height:520px;border-radius:12px;"></div>
@@ -122,7 +122,7 @@ def map_page():
             """
         )
         with ui.row().classes("items-center gap-3 mt-3 flex-nowrap"):
-            ui.link("🚗 카카오맵 앱으로 길찾기", search_link, new_tab=True).props("id=kdt-route-link").classes(
+            ui.link("카카오맵 앱으로 길찾기", search_link, new_tab=True).props("id=kdt-route-link").classes(
                 "px-4 py-2.5 rounded-xl font-bold no-underline text-sm whitespace-nowrap"
             ).style("background:#FEE500;color:#191919;")
             ui.label(
@@ -196,7 +196,7 @@ def map_page():
               }}
 
               placeMyLocationDot(originLat, originLng);
-              setRouteInfo("🚗 경로 계산 중...", true, false);
+              setRouteInfo("경로 계산 중...", true, false);
 
               var originParam = originLng + "," + originLat;
               var destParam = destLngG + "," + destLatG;
@@ -255,7 +255,7 @@ def map_page():
                 if (data.distance_m) {{
                   var km = distanceKm.toFixed(1);
                   var min = Math.round((data.duration_s || 0) / 60);
-                  setRouteInfo("🚗 입력하신 위치에서 약 " + km + "km · " + min + "분 (교통상황에 따라 달라질 수 있어요)", true, false);
+                  setRouteInfo("입력하신 위치에서 약 " + km + "km · " + min + "분 (교통상황에 따라 달라질 수 있어요)", true, false);
                 }} else {{
                   setRouteInfo("", false, false);
                 }}
@@ -298,7 +298,7 @@ def map_page():
                 setRouteInfo("이 브라우저는 위치 감지를 지원하지 않습니다. 출발지를 직접 입력해주세요.", true, true);
                 return;
               }}
-              setRouteInfo("📍 내 위치 확인 중...", true, false);
+              setRouteInfo("내 위치 확인 중...", true, false);
               navigator.geolocation.getCurrentPosition(function(pos) {{
                 startRouteFromCoords(pos.coords.latitude, pos.coords.longitude);
               }}, function() {{
@@ -312,7 +312,7 @@ def map_page():
                 setRouteInfo("지도가 아직 준비 중입니다. 잠시 후 다시 시도해주세요.", true, true);
                 return;
               }}
-              setRouteInfo("🔍 \\"" + text + "\\" 위치 찾는 중...", true, false);
+              setRouteInfo("\\"" + text + "\\" 위치 찾는 중...", true, false);
 
               places.keywordSearch(text, function(data, status) {{
                 if (status === kakao.maps.services.Status.OK && data.length > 0) {{
