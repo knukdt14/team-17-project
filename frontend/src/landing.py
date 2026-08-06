@@ -1,11 +1,14 @@
 """
 landing.py
-- 기수를 먼저 선택해야 다른 탭(챗봇/일정/오시는길/교수진)이 나타난다.
+- 기수를 먼저 선택해야 다른 탭(챗봇/일정/오시는길/운영진)이 나타난다.
 - 4개 기수 카드를 가로 한 줄에 폭 꽉 채워 나란히 배치한다. 페이지 진입 시 순서대로
   팝인하고, 자리 잡은 뒤에는 각자 다른 리듬으로 은은히 부유한다. 카드를 클릭하면
   그 기수로 화면이 전환된다.
 - 이미 기수를 선택한 상태로 "/"에 들어오면 바로 챗봇으로 보낸다. "기수 변경" 버튼만
-  선택(+대화기록)을 지우고 여기로 돌아오게 한다 (theme.py의 좌측 드로어에서 호출).
+  선택(+대화기록)을 지우고 여기로 돌아오게 한다 (theme.py의 헤더 네비게이션에서 호출).
+- main.py의 ui.sub_pages가 이 함수를 "/" 경로 콘텐츠로 그대로 호출하므로 @ui.page
+  데코레이터도, 헤더를 그리는 frame() 호출도 여기서는 하지 않는다(헤더는 root_page에서
+  한 번만 그려서 탭을 옮겨 다녀도 깜빡이지 않게 한다).
 """
 
 import os
@@ -14,7 +17,7 @@ from nicegui import app, ui
 
 from auth import is_admin
 from cohorts import COHORT_LIST, get_cohort
-from theme import ACCENT, ACCENT_DARK, GOLD, INK, MUTED, frame
+from theme import ACCENT, ACCENT_DARK, GOLD, INK, MUTED
 
 ASSETS_DIR = os.path.join(os.path.dirname(__file__), "..", "assets")
 
@@ -84,7 +87,7 @@ _FLOAT_CSS = f"""
   .kdt-float-card:hover .kdt-card-cta {{ opacity: 1; transform: translateY(0); }}
 
   .kdt-card-index {{
-    font-family: 'Nanum Myeongjo', serif;
+    font-weight: 800;
     letter-spacing: 0.12em;
   }}
 
@@ -103,17 +106,18 @@ _FLOAT_CSS = f"""
 
 def _select(name: str):
     app.storage.user["selected_cohort"] = name
-    ui.navigate.to("/chat")
+    app.storage.user["chat_messages"] = []
+    # 기수 선택은 헤더(상단바 로고·네비게이션)가 바뀌어야 하는 상태 변경이라, ui.sub_pages의
+    # 소프트 전환 대신 진짜 새로고침으로 넘어간다 - 그래야 프레임이 새 상태로 다시 그려진다.
+    ui.run_javascript("window.location.href = '/chat'")
 
 
-@ui.page("/")
 def landing():
     # 관리자는 기수 개념과 무관하게 항상 챗봇+업로드 화면으로 바로 들어간다.
     if is_admin() or app.storage.user.get("selected_cohort"):
-        ui.navigate.to("/chat")
+        ui.run_javascript("window.location.href = '/chat'")
         return
 
-    frame(current_path="/")
     ui.add_head_html(_FLOAT_CSS)
 
     ui.element("div").classes("kdt-blob").style(

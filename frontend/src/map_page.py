@@ -13,6 +13,8 @@ map_page.py
 - "카카오맵으로 길찾기" 버튼은 카카오맵 앱/웹으로 여는 딥링크일 뿐이라 Directions API를
   호출하지 않는다. 도착지만 넘기면 출발지(현재 위치)는 카카오맵 앱이 알아서 잡는다.
 - KAKAO_JS_KEY가 없으면 지도 없이 딥링크 버튼만 보여준다.
+- main.py의 ui.sub_pages가 이 함수를 "/map" 콘텐츠로 호출하므로 @ui.page 데코레이터와
+  frame() 호출은 여기서 하지 않는다(헤더는 root_page에서 한 번만 그린다).
 """
 
 import json
@@ -23,7 +25,7 @@ from urllib.parse import quote
 from nicegui import app, ui
 
 from cohorts import get_main_location
-from theme import ACCENT, INK, MUTED, frame, page_header
+from theme import ACCENT, INK, MUTED, page_header
 
 KAKAO_JS_KEY = os.environ.get("KAKAO_JS_KEY", "")
 
@@ -48,10 +50,7 @@ _KNOWN_ADDRESSES = {
 }
 
 
-@ui.page("/map")
 def map_page():
-    frame(current_path="/map")
-
     cohort = app.storage.user.get("selected_cohort")
     location = get_main_location(cohort)
 

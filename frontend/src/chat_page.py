@@ -1,8 +1,10 @@
 """
 chat_page.py
 - 사용자용 챗봇 화면. model과의 통신은 api_client를 통해서만 한다.
-- 대화 기록은 app.storage.user에 저장한다 (각 @ui.page 이동은 실제 페이지 전환이라,
-  브라우저 쿠키 기반 저장소가 아니면 다른 탭으로 갔다 오는 사이 기록이 날아간다).
+- 대화 기록은 app.storage.user에 저장한다 (서명된 쿠키 기반이라 탭을 옮겨 다니거나
+  새로고침해도 유지된다).
+- main.py의 ui.sub_pages가 이 함수를 "/chat" 콘텐츠로 호출하므로 @ui.page 데코레이터와
+  frame() 호출은 여기서 하지 않는다(헤더는 root_page에서 한 번만 그린다).
 """
 
 import asyncio
@@ -13,7 +15,7 @@ from nicegui import app, ui
 from api_client import ModelServiceError, ask_stream
 from auth import is_admin
 from sources import render_sources
-from theme import ACCENT, ACCENT_DARK, GOLD, INK, KNU_LOGO_PATH, frame, page_header
+from theme import ACCENT, ACCENT_DARK, GOLD, INK, KNU_LOGO_PATH, page_header
 
 # 무료/유료 버전 데모 토글 - model이 tier에 따라 solar(무료)/groq_llama(유료)로 답변한다.
 # 과금 로직은 없고 시각적으로만 구분되는 데모용 기능.
@@ -40,7 +42,7 @@ def _avatar_svg(text: str, color_from: str, color_to: str) -> str:
         f'<stop offset="0" stop-color="{color_from}"/><stop offset="1" stop-color="{color_to}"/>'
         f"</linearGradient></defs>"
         f'<circle cx="32" cy="32" r="32" fill="url(#g)"/>'
-        f'<text x="32" y="40" font-family="Gowun Dodum,Arial,sans-serif" font-size="20" '
+        f'<text x="32" y="40" font-family="Pretendard,Arial,sans-serif" font-size="20" '
         f'font-weight="800" fill="#fff" text-anchor="middle">{text}</text></svg>'
     )
     return "data:image/svg+xml;utf8," + urllib.parse.quote(svg)
@@ -72,7 +74,7 @@ _CHAT_CSS = """
 
   /* 질문 입력창을 화면 하단에 고정 - 스크롤 위치와 무관하게 항상 손 닿는 자리에 있게 */
   .kdt-composer-anchor {
-    height: 84px;
+    height: 104px;
   }
   .kdt-composer-fixed {
     position: fixed;
@@ -87,15 +89,28 @@ _CHAT_CSS = """
 """
 
 
+_SCROLL_JS = """
+(function() {
+  function kdtScrollChat() {
+    var el = document.querySelector('.kdt-chat-end');
+    if (el) { el.scrollIntoView({block: 'end'}); }
+    else { window.scrollTo(0, document.body.scrollHeight); }
+  }
+  requestAnimationFrame(function() { requestAnimationFrame(kdtScrollChat); });
+  setTimeout(kdtScrollChat, 150);
+})()
+"""
+
+
 async def _do_scroll():
     try:
-        # NiceGUI가 새 메시지 엘리먼트를 실제로 DOM에 그려 넣기 전에 스크롤을 계산하면
-        # 옛 scrollHeight 기준으로 스크롤돼서 새 메시지가 화면 밖에 남는 문제가 있었다.
-        # 두 번의 requestAnimationFrame으로 브라우저가 레이아웃을 확정한 다음 스크롤한다.
-        await ui.run_javascript(
-            "requestAnimationFrame(() => requestAnimationFrame(() => "
-            "window.scrollTo(0, document.body.scrollHeight)))"
-        )
+        # scrollHeight를 직접 계산하는 대신 맨 아래 앵커 엘리먼트를 scrollIntoView로
+        # 스크롤한다 - 실제로 스크롤되는 요소가 window인지 다른 컨테이너인지 몰라도 항상
+        # 맞는 곳을 스크롤해준다. NiceGUI가 새 메시지를 DOM에 그려 넣기 전에 스크롤하면
+        # 옛 레이아웃 기준으로 계산돼서 새 메시지가 화면 밖에 남는 문제가 있었어서, 두 번의
+        # requestAnimationFrame으로 레이아웃이 확정된 다음 스크롤하고, 마크다운/폰트 로딩 등으로
+        # 그 이후에도 높이가 살짝 바뀔 수 있어 150ms 뒤에 한 번 더 보정한다.
+        await ui.run_javascript(_SCROLL_JS)
     except Exception:
         pass
 
@@ -108,9 +123,7 @@ def _scroll_to_bottom():
     asyncio.create_task(_do_scroll())
 
 
-@ui.page("/chat")
 def chat_page():
-    frame(current_path="/chat")
     ui.add_head_html(_CHAT_CSS)
 
     # 관리자 모드는 기수 개념과 무관하게(벡터DB가 기수 구분 없이 통합돼 있음) 항상
@@ -146,8 +159,8 @@ def chat_page():
     chat_box = ui.column().classes("w-full gap-2")
     faq_box = ui.column().classes("w-full gap-3 mb-3")
     # 입력창은 고정 위치라 문서 흐름에서 빠지므로, 마지막 메시지가 입력창에 가려지지
-    # 않도록 그 자리만큼 빈 공간을 하나 남겨둔다.
-    ui.element("div").classes("w-full kdt-composer-anchor")
+    # 않도록 그 자리만큼 빈 공간을 하나 남겨두고, 이 엘리먼트를 스크롤 목적지로 쓴다.
+    ui.element("div").classes("w-full kdt-composer-anchor kdt-chat-end")
     input_row = ui.row().classes(
         "kdt-composer-fixed items-center gap-2 p-2 pl-4"
     ).style(f"background:#fff; border:1px solid {GOLD}40; border-radius:999px; box-shadow: var(--kdt-shadow-md);")

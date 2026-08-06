@@ -2,18 +2,17 @@
 schedule_page.py
 - 선택한 기수의 교육기간/장소/모집기간/혜택/문의를 타임라인 + 카드 형태로 보여준다.
 - model을 거치지 않고 cohorts.py의 데이터를 그대로 표시한다.
+- main.py의 ui.sub_pages가 이 함수를 "/schedule" 콘텐츠로 호출하므로 @ui.page 데코레이터와
+  frame() 호출은 여기서 하지 않는다(헤더는 root_page에서 한 번만 그린다).
 """
 
 from nicegui import app, ui
 
 from cohorts import get_cohort
-from theme import ACCENT, ACCENT_DARK, ACCENT_SOFT, BORDER, GOLD, INK, MUTED, frame, page_header
+from theme import ACCENT, ACCENT_DARK, ACCENT_SOFT, BORDER, GOLD, INK, MUTED, page_header
 
 
-@ui.page("/schedule")
 def schedule_page():
-    frame(current_path="/schedule")
-
     cohort = app.storage.user.get("selected_cohort")
     data = get_cohort(cohort)
     if not data:

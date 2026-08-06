@@ -2,7 +2,9 @@
 theme.py
 - 앱 전체 브랜드 컬러 / 모션(애니메이션) 시스템 / 헤더 / 콘텐츠 레이아웃을 한 곳에서 관리한다.
 - "AI 웹디자이너" 컨셉으로 다듬은 톤: 크림슨 레드 + 딥 잉크 + 골드 포인트를 쓰는 기관형
-  팔레트에, Gowun Dodum(본문) + Jua(제목/포인트)로 조금 더 친근하고 귀여운 인상을 준다.
+  팔레트에 Pretendard 폰트(가독성이 좋고 눈이 편함)를 쓴다. 한때 Gowun Dodum/Jua로
+  더 귀엽게 바꿔봤지만 너무 동글동글하고 채팅 본문이 눈에 피로하다는 피드백을 받아
+  되돌렸다 - 제목류(kdt-serif 클래스)는 같은 Pretendard를 더 굵은 weight로 써서 구분만 준다.
   카드/버튼/말풍선에 진입 애니메이션과 호버 인터랙션을 광범위하게 깔아서 Streamlit
   시절의 밋밋한 느낌을 벗어난다.
   헤더 좌측 로고는 기수를 선택하면 그 기수의 연계기업 로고로 바뀌고(_brand_logo_path),
@@ -53,9 +55,9 @@ def apply_global_style():
     body_bg = ADMIN_BG if is_admin() else BG
     ui.add_head_html(
         f"""
-        <link rel="preconnect" href="https://fonts.googleapis.com">
+        <link rel="preconnect" href="https://cdn.jsdelivr.net">
         <style>
-          @import url('https://fonts.googleapis.com/css2?family=Gowun+Dodum&family=Jua&display=swap');
+          @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css');
 
           :root {{
             --kdt-accent: {ACCENT};
@@ -70,10 +72,10 @@ def apply_global_style():
           }}
 
           html, body, .q-field, .q-btn, .q-card {{
-            font-family: 'Gowun Dodum', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
+            font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
           }}
 
-          .kdt-serif {{ font-family: 'Jua', 'Gowun Dodum', sans-serif !important; }}
+          .kdt-serif {{ font-family: 'Pretendard', sans-serif !important; font-weight: 800; letter-spacing: -0.01em; }}
           .kdt-kicker {{
             display: block;
             color: {GOLD};
@@ -307,6 +309,21 @@ def apply_global_style():
                 m.addedNodes.forEach(function(n) {{ if (n.nodeType === 1) scan(n); }});
               }});
             }}).observe(document.body, {{ childList: true, subtree: true }});
+
+            // 헤더는 세션당 한 번만 그려지고 탭 전환은 ui.sub_pages가 URL만 바꿔서 처리하므로,
+            // 네비게이션 필의 활성 표시는 서버 렌더링이 아니라 현재 URL을 보고 직접 갱신한다.
+            // history.pushState()는 표준 이벤트를 안 쏴줘서(popstate는 뒤로/앞으로가기 때만
+            // 발생) 언제 URL이 바뀌었는지 이벤트로는 정확히 잡기 어려워, 짧은 주기로
+            // location.pathname을 확인하는 방식이 훨씬 안정적이다.
+            var kdtLastPath = null;
+            setInterval(function() {{
+              var path = window.location.pathname.replace(window.path_prefix || '', '') || '/';
+              if (path === kdtLastPath) return;
+              kdtLastPath = path;
+              document.querySelectorAll('.kdt-navlink').forEach(function(a) {{
+                a.classList.toggle('kdt-navlink-active', a.getAttribute('href') === path);
+              }});
+            }}, 200);
           }});
         </script>
         """
@@ -325,7 +342,10 @@ def _switch_cohort(name: str):
     # 섞이지 않도록 _clear_cohort()와 같은 원칙으로 대화 기록을 같이 비운다.
     app.storage.user["selected_cohort"] = name
     app.storage.user["chat_messages"] = []
-    ui.navigate.to("/chat")
+    # 기수가 바뀌면 헤더(좌측 로고·네비게이션)도 같이 바뀌어야 하는데, frame()은 세션당
+    # 한 번만 그려지므로 ui.navigate.to()의 소프트 전환으로는 헤더가 갱신되지 않는다.
+    # 그래서 이 경우엔 의도적으로 진짜 새로고침을 쓴다.
+    ui.run_javascript("window.location.href = '/chat'")
 
 
 def _brand_logo_path(cohort: str | None) -> str:
@@ -411,7 +431,9 @@ def _nav_pills(current_path: str, cohort: str):
         ui.button(
             cohort,
             icon="swap_horiz",
-            on_click=lambda: (_clear_cohort(), ui.navigate.to("/")),
+            # 기수 변경도 헤더가 바뀌어야 하는 상태 변경이라 하드 리로드를 쓴다
+            # (_switch_cohort와 같은 이유).
+            on_click=lambda: (_clear_cohort(), ui.run_javascript("window.location.href = '/'")),
         ).props("flat dense no-caps").classes("text-xs font-bold").style(f"color:{MUTED};")
 
 
