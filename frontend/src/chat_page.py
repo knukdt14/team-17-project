@@ -31,10 +31,19 @@ FAQ_QUESTIONS = [
 LABELS = {"user": "사용자", "assistant": "AI 어시스턴트"}
 
 
+async def _do_scroll():
+    try:
+        await ui.run_javascript("window.scrollTo(0, document.body.scrollHeight)")
+    except Exception:
+        pass
+
+
 def _scroll_to_bottom():
-    # ui.run_javascript는 코루틴이라 동기 콜백(on_token) 안에서는 await할 수 없어서
-    # create_task로 던져둔다 (스크롤은 결과를 기다릴 필요가 없는 fire-and-forget).
-    asyncio.create_task(ui.run_javascript("window.scrollTo(0, document.body.scrollHeight)"))
+    # ui.run_javascript()가 반환하는 AwaitableResponse는 진짜 코루틴이 아니라서
+    # asyncio.create_task()에 그대로 넘기면 TypeError가 난다(실제로 이 버그 때문에
+    # 질문을 보내면 사용자 말풍선만 뜨고 답변이 통째로 멈췄었음). async 래퍼로 한 번
+    # 감싸서 진짜 코루틴을 넘기고, 동기 콜백(on_token) 안에서도 fire-and-forget으로 쓴다.
+    asyncio.create_task(_do_scroll())
 
 
 @ui.page("/chat")

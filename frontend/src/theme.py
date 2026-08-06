@@ -29,10 +29,10 @@ ADMIN_BG = "#D7DBE2"
 ADMIN_DRAWER_BG = "#EEF0F3"
 
 NAV_ITEMS = [
-    ("💬", "챗봇", "/chat"),
-    ("📅", "일정", "/schedule"),
-    ("📍", "오시는길", "/map"),
-    ("👩‍🏫", "교수진", "/faculty"),
+    ("챗봇", "/chat"),
+    ("일정", "/schedule"),
+    ("오시는길", "/map"),
+    ("교수진", "/faculty"),
 ]
 
 
@@ -129,16 +129,16 @@ def frame(current_path: str = ""):
             ui.label(cohort).classes("font-extrabold text-lg mt-1").style(f"color:{INK};")
             ui.label("선택된 기수").classes("text-xs mb-4").style(f"color:{MUTED};")
 
-            def _nav_link(icon: str, label: str, path: str):
+            def _nav_link(label: str, path: str):
                 active = path == current_path
-                link = ui.link(f"{icon}  {label}", path).classes(
+                link = ui.link(label, path).classes(
                     "flex items-center gap-2 py-2 px-3 rounded-lg no-underline mb-1"
                     + (" font-bold" if active else "")
                 )
                 link.style(f"background:{ACCENT_SOFT}; color:{ACCENT};" if active else f"color:{INK};")
 
-            for icon, label, path in NAV_ITEMS:
-                _nav_link(icon, label, path)
+            for label, path in NAV_ITEMS:
+                _nav_link(label, path)
 
             ui.separator().classes("my-3")
             ui.button(

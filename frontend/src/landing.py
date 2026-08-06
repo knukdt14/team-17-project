@@ -71,13 +71,15 @@ def landing():
         f"width:420px; height:420px; bottom:-140px; right:-140px; background:{ACCENT}; opacity:0.08;"
     )
 
-    with ui.column().classes("w-full items-center gap-10 px-4 py-14 relative").style("z-index:1;"):
+    with ui.column().classes(
+        "w-full items-center justify-center gap-16 px-4 py-24 relative min-h-[85vh]"
+    ).style("z-index:1;"):
         with ui.column().classes("items-center gap-2 text-center"):
             ui.label("KDT AI·빅데이터 전문가 양성과정").classes("text-3xl font-extrabold").style(f"color:{INK};")
             ui.label("소속된 기수를 선택해주세요").classes("text-base").style(f"color:{MUTED};")
             ui.element("div").classes("w-12 h-1 rounded-full mt-2").style(f"background:{ACCENT};")
 
-        with ui.row().classes("w-full max-w-5xl gap-6 flex-nowrap overflow-x-auto px-1"):
+        with ui.row().classes("w-full max-w-5xl gap-10 flex-nowrap overflow-x-auto px-1 justify-center"):
             for name in COHORT_LIST:
                 data = get_cohort(name)
                 with ui.card().classes(
@@ -93,8 +95,3 @@ def landing():
                             ui.label(data.get("icon", "🎓"))
                     ui.label(name).classes("font-extrabold text-xl").style(f"color:{INK};")
                     ui.label(data.get("subtitle", "")).classes("text-sm mt-1").style(f"color:{MUTED};")
-
-        ui.element("div").classes("w-full max-w-md h-px").style("background:#EEE;")
-        ui.label("경북대학교 데이터융복합연구원 · AI·빅데이터 전문가 양성과정").classes("text-xs").style(
-            f"color:{MUTED};"
-        )
