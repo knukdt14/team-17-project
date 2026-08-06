@@ -11,6 +11,13 @@ main.py
   새로고침을 쓴다(auth.py, theme.py, landing.py에서 처리) - 이때는 화면이 다시 그려지는
   게 자연스럽고, 오히려 상태가 바뀌었다는 걸 보여주는 편이 맞다.
 - RAG 로직/모델 관련 코드는 전혀 갖지 않는다. model 서비스(/ask, /ingest)만 직접 호출.
+- 카카오맵 JS SDK <script>도 여기 root_page()에서 딱 한 번(진짜 브라우저 페이지 로드 시점)
+  선언적으로 붙인다. map_page.py가 방문할 때마다 document.createElement('script')로 직접
+  붙였더니, sub_pages로 재진입할 때 간헐적으로 로딩이 멈추는(새로고침해야만 되는) 문제가
+  있었다 - <script src> 태그가 실제 HTML 문서 로드의 일부로 파싱될 때와, 나중에 JS로
+  동적으로 끼워넣을 때 카카오 SDK 내부 초기화 타이밍이 미묘하게 달라서 생기는 문제로
+  보인다. head에 한 번만 선언해두면(모든 탭에서 공유) 예전 버전(탭마다 완전한 페이지
+  새로고침이던 시절)과 동일하게 항상 안정적으로 초기화된다.
 """
 
 import os
@@ -25,6 +32,8 @@ from map_page import map_page
 from poster_page import poster_page
 from schedule_page import schedule_page
 from theme import frame
+
+KAKAO_JS_KEY = os.environ.get("KAKAO_JS_KEY", "")
 
 ROUTES = {
     "/": landing,
@@ -49,6 +58,13 @@ app.add_static_files("/assets", _ASSETS_DIR)
 @ui.page("/")
 @ui.page("/{path:path}")
 def root_page(path: str = ""):
+    if KAKAO_JS_KEY:
+        # 실제 <head>에 들어가는 진짜 <script> 태그라, 브라우저가 문서를 파싱하면서 정상적으로
+        # 로드/초기화한다(카카오 SDK가 기대하는 원래 방식). map_page.py는 이게 준비될 때까지
+        # window.kakao.maps.LatLng 존재 여부만 폴링해서 기다린다.
+        ui.add_head_html(
+            f'<script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey={KAKAO_JS_KEY}&libraries=services"></script>'
+        )
     frame(current_path=f"/{path}" if path else "/")
     ui.sub_pages(ROUTES)
 
