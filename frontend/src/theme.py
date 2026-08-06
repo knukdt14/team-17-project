@@ -53,6 +53,12 @@ BG = "#FAF9F6"
 ADMIN_BG = "#D7DBE2"
 ADMIN_CONSOLE_BG = "#20242E"
 
+# 헤더/본문/관리자 콘솔 바가 전부 같은 폭으로 가운데 정렬되도록 공유하는 값. 헤더 배경 자체는
+# 화면 끝까지 꽉 채우되(유리질감 바), 그 안의 내용물(로고/네비/로그인)은 이 폭 안에서만
+# 정렬한다 - 안 그러면 헤더는 화면 끝까지 쓰는데 본문은 가운데 좁은 폭으로 떠 있어서 큰
+# 화면에서 화면을 안 쓰는 것처럼(왼쪽으로 쏠린 것처럼) 보였다.
+CONTENT_MAX_WIDTH = "1400px"
+
 NAV_ITEMS = [
     ("챗봇", "/chat"),
     ("일정", "/schedule"),
@@ -227,7 +233,7 @@ def apply_global_style():
 
           /* ---------- 본문 레이아웃: 좌측 사이드바 없이, 화면 중앙의 단일 컬럼 블록 ---------- */
           .nicegui-content {{
-            max-width: 1040px;
+            max-width: {CONTENT_MAX_WIDTH};
             width: 100%;
             margin: 0 auto;
             padding: 40px 28px 72px !important;
@@ -412,33 +418,36 @@ def _admin_console_bar():
     구조 자체는 일반 모드와 똑같이 "본문 한 덩어리"를 유지한다. PDF를 업로드하면 model이
     청킹 후 벡터DB에 바로 반영하고 디스크에 저장(save_local)해서, 컨테이너를 재시작해도
     남아있다."""
-    with ui.row().classes("w-full items-center gap-5 px-6 py-3.5 flex-wrap kdt-admin-bar").style(
+    with ui.row().classes("w-full items-center py-3.5 kdt-admin-bar").style(
         f"background:{ADMIN_CONSOLE_BG};"
     ):
-        with ui.row().classes("items-center gap-2"):
-            ui.icon("admin_panel_settings").style(f"color:{GOLD}; font-size:1.35rem;")
-            ui.label("관리자 모드").classes("font-extrabold text-sm text-white")
-        ui.label("PDF를 올리면 벡터DB에 바로 반영되어 챗봇 답변에 곧장 쓰입니다.").classes(
-            "text-xs"
-        ).style("color:#B7BCC9;")
+        with ui.row().classes("items-center gap-5 flex-wrap w-full px-6").style(
+            f"max-width:{CONTENT_MAX_WIDTH}; margin:0 auto;"
+        ):
+            with ui.row().classes("items-center gap-2"):
+                ui.icon("admin_panel_settings").style(f"color:{GOLD}; font-size:1.35rem;")
+                ui.label("관리자 모드").classes("font-extrabold text-sm text-white")
+            ui.label("PDF를 올리면 벡터DB에 바로 반영되어 챗봇 답변에 곧장 쓰입니다.").classes(
+                "text-xs"
+            ).style("color:#B7BCC9;")
 
-        status_label = ui.label("").classes("text-xs")
+            status_label = ui.label("").classes("text-xs")
 
-        async def _handle_upload(e):
-            content = await e.file.read()
-            status_label.text = "업로드 및 반영 중..."
-            status_label.style("color:#B7BCC9;")
-            try:
-                data = await upload_pdf(e.file.name, content)
-                status_label.text = f"{data['filename']} 반영 완료 (청크 {data['chunks_added']}개 추가)"
-                status_label.style("color:#4ADE80;")
-            except ModelServiceError as err:
-                status_label.text = str(err)
-                status_label.style("color:#F87171;")
+            async def _handle_upload(e):
+                content = await e.file.read()
+                status_label.text = "업로드 및 반영 중..."
+                status_label.style("color:#B7BCC9;")
+                try:
+                    data = await upload_pdf(e.file.name, content)
+                    status_label.text = f"{data['filename']} 반영 완료 (청크 {data['chunks_added']}개 추가)"
+                    status_label.style("color:#4ADE80;")
+                except ModelServiceError as err:
+                    status_label.text = str(err)
+                    status_label.style("color:#F87171;")
 
-        ui.upload(on_upload=_handle_upload, auto_upload=True, label="PDF 업로드").props(
-            "accept=.pdf flat dense dark"
-        ).classes("w-64 ml-auto")
+            ui.upload(on_upload=_handle_upload, auto_upload=True, label="PDF 업로드").props(
+                "accept=.pdf flat dense dark"
+            ).classes("w-64 ml-auto")
 
 
 def _nav_pills(current_path: str, cohort: str):
@@ -468,18 +477,24 @@ def frame(current_path: str = ""):
     cohort = app.storage.user.get("selected_cohort")
     admin = is_admin()
 
-    with ui.header().classes("items-center justify-between px-6 py-3 gap-4 flex-wrap").style(
+    with ui.header().classes("items-center py-3").style(
         f"background: rgba(255,255,255,0.85); backdrop-filter: blur(10px); "
         f"border-bottom: 1px solid {BORDER}; box-shadow: 0 1px 0 {GOLD}55;"
     ):
-        _brand_mark()
-        if admin:
-            with ui.row().classes("items-center gap-1.5"):
-                ui.icon("admin_panel_settings").style(f"color:{ACCENT}; font-size:1.1rem;")
-                ui.label("관리자 모드").classes("text-xs font-bold").style(f"color:{ACCENT};")
-        elif cohort:
-            _nav_pills(current_path, cohort)
-        render_login_widget()
+        # 헤더 배경(유리질감 바)은 화면 끝까지 채우되, 그 안의 로고/네비/로그인은 본문과 같은
+        # 폭 안에서 가운데 정렬한다 - 안 그러면 큰 화면에서 헤더만 꽉 차 보이고 본문은 좁게
+        # 떠 있어서 화면을 안 쓰는 것처럼 보인다.
+        with ui.row().classes("items-center justify-between gap-4 flex-wrap w-full px-6").style(
+            f"max-width:{CONTENT_MAX_WIDTH}; margin:0 auto;"
+        ):
+            _brand_mark()
+            if admin:
+                with ui.row().classes("items-center gap-1.5"):
+                    ui.icon("admin_panel_settings").style(f"color:{ACCENT}; font-size:1.1rem;")
+                    ui.label("관리자 모드").classes("text-xs font-bold").style(f"color:{ACCENT};")
+            elif cohort:
+                _nav_pills(current_path, cohort)
+            render_login_widget()
 
     if admin:
         _admin_console_bar()
