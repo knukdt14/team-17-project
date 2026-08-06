@@ -9,6 +9,7 @@ landing.py
 
 from nicegui import app, ui
 
+from auth import is_admin
 from cohorts import COHORT_LIST, get_cohort
 from theme import ACCENT, INK, MUTED, frame
 
@@ -51,7 +52,8 @@ def _select(name: str):
 
 @ui.page("/")
 def landing():
-    if app.storage.user.get("selected_cohort"):
+    # 관리자는 기수 개념과 무관하게 항상 챗봇+업로드 화면으로 바로 들어간다.
+    if is_admin() or app.storage.user.get("selected_cohort"):
         ui.navigate.to("/chat")
         return
 

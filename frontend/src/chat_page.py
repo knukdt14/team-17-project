@@ -8,6 +8,7 @@ chat_page.py
 from nicegui import app, ui
 
 from api_client import ModelServiceError, ask_stream
+from auth import is_admin
 from sources import render_sources
 from theme import frame, page_header
 
@@ -28,7 +29,9 @@ LABELS = {"user": "사용자", "assistant": "AI 어시스턴트"}
 def chat_page():
     frame(current_path="/chat")
 
-    if not app.storage.user.get("selected_cohort"):
+    # 관리자 모드는 기수 개념과 무관하게(벡터DB가 기수 구분 없이 통합돼 있음) 항상
+    # 챗봇+업로드 화면을 바로 쓸 수 있어야 하므로 기수 선택 여부를 확인하지 않는다.
+    if not is_admin() and not app.storage.user.get("selected_cohort"):
         ui.label("먼저 기수를 선택해주세요.").classes("text-gray-500 m-4")
         ui.link("기수 선택하러 가기", "/").classes("m-4")
         return

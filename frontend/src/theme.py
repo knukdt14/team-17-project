@@ -9,6 +9,7 @@ theme.py
 
 from nicegui import app, ui
 
+from api_client import ModelServiceError, upload_pdf
 from auth import is_admin, render_login_widget
 
 ACCENT = "#C8102E"
@@ -17,6 +18,10 @@ INK = "#1F2937"
 MUTED = "#6B7280"
 BORDER = "#E5E7EB"
 BG = "#FAFAFA"
+# 관리자로 로그인하면 화면 전체가 살짝 어두워져서 "지금은 일반 화면이 아니다"가 한눈에
+# 구분되게 한다.
+ADMIN_BG = "#D7DBE2"
+ADMIN_DRAWER_BG = "#EEF0F3"
 
 NAV_ITEMS = [
     ("💬", "챗봇", "/chat"),
@@ -28,10 +33,11 @@ NAV_ITEMS = [
 
 def apply_global_style():
     ui.colors(primary=ACCENT, secondary=INK)
+    body_bg = ADMIN_BG if is_admin() else BG
     ui.add_head_html(
         f"""
         <style>
-          body {{ background: {BG} !important; }}
+          body {{ background: {body_bg} !important; }}
           .q-card {{
             border-radius: 14px !important;
             border: 1px solid {BORDER} !important;
@@ -65,10 +71,40 @@ def _brand_mark():
             ui.label("경북대학교 데이터융복합연구원").classes("text-[11px] leading-tight").style(f"color:{MUTED};")
 
 
+def _render_upload_panel():
+    """관리자 전용 드로어 내용: 규정 PDF를 업로드하면 model이 청킹 후 벡터DB에 바로
+    반영하고 디스크에 저장(save_local)해서, 컨테이너를 재시작해도 남아있다."""
+    ui.label("🛠️ 관리자 모드").classes("font-extrabold text-sm").style(f"color:{ACCENT};")
+    ui.label("PDF를 올리면 벡터DB에 바로 반영되어 챗봇 답변에 곧장 쓰입니다.").classes(
+        "text-xs mb-4"
+    ).style(f"color:{MUTED};")
+
+    status_label = ui.label("").classes("text-xs mt-2").style(f"color:{MUTED};")
+
+    async def _handle_upload(e):
+        content = await e.file.read()
+        status_label.text = "업로드 및 반영 중..."
+        status_label.style(f"color:{MUTED};")
+        try:
+            data = await upload_pdf(e.file.name, content)
+            status_label.text = f"✅ {data['filename']} 반영 완료 (청크 {data['chunks_added']}개 추가)"
+            status_label.style("color:#16a34a;")
+        except ModelServiceError as err:
+            status_label.text = str(err)
+            status_label.style("color:#dc2626;")
+
+    ui.upload(on_upload=_handle_upload, auto_upload=True, label="PDF 업로드").props(
+        "accept=.pdf flat bordered"
+    ).classes("w-full")
+
+
 def frame(current_path: str = ""):
-    """헤더(브랜드+로그인) + 기수 선택 후에만 보이는 좌측 네비게이션 드로어를 그린다."""
+    """헤더(브랜드+로그인) + 좌측 드로어를 그린다. 드로어 내용은 관리자 로그인 여부로 갈린다:
+    관리자면 기수/메뉴 대신 PDF 업로드 패널만 보여주고(메인 화면은 챗봇에 고정), 아니면
+    기존처럼 기수 선택 후 메뉴 네비게이션을 보여준다."""
     apply_global_style()
     cohort = app.storage.user.get("selected_cohort")
+    admin = is_admin()
 
     with ui.header().classes("items-center justify-between bg-white px-6 py-3").style(
         f"border-bottom: 3px solid {ACCENT};"
@@ -76,7 +112,12 @@ def frame(current_path: str = ""):
         _brand_mark()
         render_login_widget()
 
-    if cohort:
+    if admin:
+        with ui.left_drawer().classes("").style(
+            f"background:{ADMIN_DRAWER_BG}; border-right: 1px solid {BORDER};"
+        ):
+            _render_upload_panel()
+    elif cohort:
         with ui.left_drawer().classes("bg-white").style(f"border-right: 1px solid {BORDER};"):
             ui.label(cohort).classes("font-extrabold text-lg mt-1").style(f"color:{INK};")
             ui.label("선택된 기수").classes("text-xs mb-4").style(f"color:{MUTED};")
@@ -91,8 +132,6 @@ def frame(current_path: str = ""):
 
             for icon, label, path in NAV_ITEMS:
                 _nav_link(icon, label, path)
-            if is_admin():
-                _nav_link("🛠️", "관리자", "/admin")
 
             ui.separator().classes("my-3")
             ui.button(

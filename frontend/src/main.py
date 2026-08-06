@@ -10,7 +10,6 @@ import os
 
 from nicegui import ui
 
-import admin_page  # noqa: F401  (import 자체가 @ui.page 라우트 등록)
 import chat_page  # noqa: F401
 import faculty_page  # noqa: F401
 import landing  # noqa: F401

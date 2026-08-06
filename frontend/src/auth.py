@@ -10,7 +10,7 @@ import os
 
 from nicegui import app, ui
 
-_DEFAULT_ADMIN_PASSWORD = "changeme"
+_DEFAULT_ADMIN_PASSWORD = "1234"
 _SESSION_KEY = "is_admin"
 
 
@@ -47,7 +47,9 @@ def render_login_widget():
                     def _login():
                         if pw.value and pw.value == _admin_password():
                             app.storage.user[_SESSION_KEY] = True
-                            ui.navigate.reload()
+                            # 관리자 모드의 메인 화면은 챗봇 + 좌측 업로드 패널이라, 로그인한
+                            # 페이지가 어디였든 챗봇으로 이동시킨다.
+                            ui.navigate.to("/chat")
                         else:
                             error_label.text = "비밀번호가 올바르지 않습니다."
 
