@@ -3,14 +3,19 @@ theme.py
 - 앱 전체 브랜드 컬러 / 헤더 / 좌측 네비게이션(드로어)을 한 곳에서 관리한다.
 - 경북대 데이터융복합연구원 사이트 톤(화이트 배경 + 레드 포인트 + 카드형 그리드)을 참고해서,
   Streamlit 시절의 인디고 그라데이션 톤 대신 절제된 기관형 톤으로 바꿨다.
-  실제 KNU 로고 이미지는 쓸 수 없어서, 로고 대신 레드 마크 + 텍스트 워드마크로 그 느낌만 가져온다.
+  헤더 좌측에는 경북대 로고(frontend/assets/logo_13.png)를 고정으로 붙인다.
 - frame()이 모든 페이지 공통 뼈대(헤더+드로어)를 그리고, 각 페이지는 그 아래 본문만 채우면 된다.
 """
+
+import os
 
 from nicegui import app, ui
 
 from api_client import ModelServiceError, upload_pdf
 from auth import is_admin, render_login_widget
+
+ASSETS_DIR = os.path.join(os.path.dirname(__file__), "..", "assets")
+KNU_LOGO_PATH = os.path.join(ASSETS_DIR, "logo_13.png")
 
 ACCENT = "#C8102E"
 ACCENT_SOFT = "#C8102E14"
@@ -66,6 +71,8 @@ def _clear_cohort():
 def _brand_mark():
     with ui.row().classes("items-center gap-3"):
         ui.element("div").classes("w-2.5 h-8 rounded-sm").style(f"background:{ACCENT};")
+        if os.path.exists(KNU_LOGO_PATH):
+            ui.image(KNU_LOGO_PATH).classes("w-8 h-8").props("fit=contain")
         with ui.column().classes("gap-0"):
             ui.label("KDT AI·빅데이터").classes("font-extrabold text-base leading-tight").style(f"color:{INK};")
             ui.label("경북대학교 데이터융복합연구원").classes("text-[11px] leading-tight").style(f"color:{MUTED};")

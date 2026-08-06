@@ -7,11 +7,15 @@ landing.py
   선택(+대화기록)을 지우고 여기로 돌아오게 한다 (theme.py의 좌측 드로어에서 호출).
 """
 
+import os
+
 from nicegui import app, ui
 
 from auth import is_admin
 from cohorts import COHORT_LIST, get_cohort
 from theme import ACCENT, INK, MUTED, frame
+
+ASSETS_DIR = os.path.join(os.path.dirname(__file__), "..", "assets")
 
 _FLOAT_CSS = f"""
 <style>
@@ -80,10 +84,14 @@ def landing():
                 with ui.card().classes(
                     "kdt-float-card items-center text-center p-9 w-64 cursor-pointer"
                 ).on("click", lambda name=name: _select(name)):
+                    logo_path = os.path.join(ASSETS_DIR, data["logo"]) if data.get("logo") else None
                     with ui.element("div").classes(
-                        "w-16 h-16 rounded-2xl flex items-center justify-center text-3xl mb-3 mx-auto"
+                        "w-16 h-16 rounded-2xl flex items-center justify-center text-3xl mb-3 mx-auto overflow-hidden"
                     ).style(f"background:{ACCENT}14;"):
-                        ui.label(data.get("icon", "🎓"))
+                        if logo_path and os.path.exists(logo_path):
+                            ui.image(logo_path).classes("w-full h-full").props("fit=cover")
+                        else:
+                            ui.label(data.get("icon", "🎓"))
                     ui.label(name).classes("font-extrabold text-xl").style(f"color:{INK};")
                     ui.label(data.get("subtitle", "")).classes("text-sm mt-1").style(f"color:{MUTED};")
 

@@ -45,13 +45,16 @@ EMBEDDING_DEVICE = "cpu"
 # 로컬 Qwen2.5-7B(4bit)이 가끔 한자/중국어가 섞여 나오는 언어 드리프트가 있어서, API 기반
 # Upstage Solar로 교체함. get_answer_chain이 prompt|llm|StrOutputParser()로 백엔드를
 # 추상화해두고 있어서(rag_chain.get_llm) llm_key만 바꾸면 되고, 나머지 스트리밍/검색 로직은
-# 그대로 재사용된다. UPSTAGE_API_KEY가 .env에 있어야 한다.
-LLM_KEY = "solar"
+# 그대로 재사용된다. UPSTAGE_API_KEY / GROQ_API_KEY가 .env에 있어야 한다.
+#
+# 무료/유료 버전 데모용 - 실제 과금 로직은 없고, tier에 따라 그냥 다른 LLM으로 답변하게만
+# 나눠둔 것 (시각화/데모 목적). AskRequest.tier로 받아서 아래 chains 중 하나를 고른다.
+TIER_LLM_KEYS = {"free": "solar", "paid": "groq_llama"}
 PROMPT_STYLE = "service"
 USE_HYBRID_RETRIEVAL = True
 TOP_K = 5
 
-state = {"vectorstore": None, "chunks": None, "retriever": None, "chain": None}
+state = {"vectorstore": None, "chunks": None, "retriever": None, "chains": {}}
 gpu_lock = threading.Lock()  # 임베딩/LLM 인스턴스 1개 -> 동시 요청을 직렬화해서 안전하게 처리
 
 
@@ -78,7 +81,10 @@ async def lifespan(app: FastAPI):
         embedding_device=EMBEDDING_DEVICE,
     )
     state["retriever"] = _build_retriever()
-    state["chain"] = get_answer_chain(llm_key=LLM_KEY, prompt_style=PROMPT_STYLE)
+    state["chains"] = {
+        tier: get_answer_chain(llm_key=llm_key, prompt_style=PROMPT_STYLE)
+        for tier, llm_key in TIER_LLM_KEYS.items()
+    }
     print("[model] 준비 완료 - 서버 시작")
     yield
     print("[model] 서버 종료")
@@ -96,6 +102,7 @@ app.add_middleware(
 
 class AskRequest(BaseModel):
     question: str
+    tier: str = "free"
 
 
 class IngestResponse(BaseModel):
@@ -169,14 +176,15 @@ def _best_snippet(answer: str, text: str) -> str:
     return "\n".join(snippet_lines)
 
 
-def _stream_answer(question: str):
+def _stream_answer(question: str, tier: str):
     """검색 -> LLM 스트리밍 -> 마지막에 근거 문서(sources) 순서로 SSE 이벤트를 흘려보낸다.
     generate가 끝나기 전에 다음 요청이 GPU를 밟지 않도록, 스트림 소비가 끝날 때까지 gpu_lock을 쥔다."""
+    chain = state["chains"].get(tier) or state["chains"]["free"]
     answer_parts = []
     with gpu_lock:
         docs = state["retriever"].invoke(question)
         context = format_docs(docs)
-        for token in state["chain"].stream({"context": context, "question": question}):
+        for token in chain.stream({"context": context, "question": question}):
             answer_parts.append(token)
             yield _sse({"token": token})
 
@@ -205,7 +213,7 @@ def ask(req: AskRequest):
     if not req.question.strip():
         raise HTTPException(status_code=400, detail="질문을 입력하세요.")
 
-    return StreamingResponse(_stream_answer(req.question), media_type="text/event-stream")
+    return StreamingResponse(_stream_answer(req.question, req.tier), media_type="text/event-stream")
 
 
 @app.post("/ingest", response_model=IngestResponse)
@@ -228,7 +236,10 @@ def ingest(file: UploadFile = File(...)):
         persist_store(state["vectorstore"], VECTORSTORE_BACKEND, EMBEDDING_MODEL_KEY, base_dir=VECTORSTORE_DIR)
         state["chunks"].extend(new_chunks)
         state["retriever"] = _build_retriever()
-        state["chain"] = get_answer_chain(llm_key=LLM_KEY, prompt_style=PROMPT_STYLE)
+        state["chains"] = {
+            tier: get_answer_chain(llm_key=llm_key, prompt_style=PROMPT_STYLE)
+            for tier, llm_key in TIER_LLM_KEYS.items()
+        }
 
     return IngestResponse(
         message="업로드 및 벡터DB 반영 완료",

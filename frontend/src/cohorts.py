@@ -9,6 +9,7 @@ cohorts.py
 COHORTS = {
     "13기": {
         "icon": "🎓",
+        "logo": "logo_13.png",
         "subtitle": "경북대학교 데이터융복합연구원",
         "title": "[포항시X경북대학교] AI·빅데이터 전문가 양성과정 13기",
         "period": {
@@ -30,6 +31,7 @@ COHORTS = {
     },
     "14기": {
         "icon": "🚗",
+        "logo": "logo_14.png",
         "subtitle": "아진산업 채용연계",
         "title": "아진산업 채용예정자 부트캠프 (AI·빅데이터 전문가 양성과정 14기)",
         "period": {
@@ -52,6 +54,7 @@ COHORTS = {
     },
     "15기": {
         "icon": "⚙️",
+        "logo": "logo_15.jpg",
         "subtitle": "티에이치엔 채용연계",
         "title": "티에이치엔 채용예정자 부트캠프 (AI·빅데이터 전문가 양성과정 15기)",
         "period": {
@@ -74,6 +77,7 @@ COHORTS = {
     },
     "17기": {
         "icon": "🔋",
+        "logo": "logo_17.png",
         "subtitle": "피엔티 채용연계",
         "title": "피엔티 채용예정자 부트캠프 (AI·빅데이터 전문가 양성과정 17기)",
         "period": {

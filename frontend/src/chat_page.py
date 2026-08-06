@@ -10,7 +10,11 @@ from nicegui import app, ui
 from api_client import ModelServiceError, ask_stream
 from auth import is_admin
 from sources import render_sources
-from theme import frame, page_header
+from theme import MUTED, frame, page_header
+
+# 무료/유료 버전 데모 토글 - model이 tier에 따라 solar(무료)/groq_llama(유료)로 답변한다.
+# 과금 로직은 없고 시각적으로만 구분되는 데모용 기능.
+TIER_OPTIONS = {"free": "🆓 무료 버전", "paid": "💎 유료 버전"}
 
 # 챗봇 화면에 바로 보여줄 자주 묻는 질문(규정 관련 위주).
 # 일정처럼 기수마다 값이 달라지는 정보는 여기 넣지 않는다 — 벡터DB가 기수 구분 없이
@@ -37,6 +41,21 @@ def chat_page():
         return
 
     page_header("💬", "KDT 규정집 챗봇", "국민내일배움카드 / KDT 규정집 등 사내 규정에 대해 물어보세요.")
+
+    tier = {"value": app.storage.user.get("llm_tier", "free")}
+
+    def _on_tier_change(e):
+        tier["value"] = e.value
+        app.storage.user["llm_tier"] = e.value
+
+    with ui.row().classes("items-center gap-3 mb-4 flex-wrap"):
+        ui.label("응답 모델").classes("text-xs font-bold").style(f"color:{MUTED};")
+        ui.toggle(TIER_OPTIONS, value=tier["value"], on_change=_on_tier_change).props(
+            "rounded unelevated color=primary"
+        )
+        ui.label("데모용 - 무료는 Solar, 유료는 Llama 3.3 70B로 답변합니다.").classes("text-xs").style(
+            f"color:{MUTED};"
+        )
 
     messages: list = app.storage.user.setdefault("chat_messages", [])
     chat_box = ui.column().classes("w-full gap-2")
@@ -85,7 +104,7 @@ def chat_page():
         is_error = False
         sources: list = []
         try:
-            sources = await ask_stream(question, on_token)
+            sources = await ask_stream(question, on_token, tier=tier["value"])
         except ModelServiceError as e:
             answer["text"] = str(e)
             content_md.set_content(answer["text"])

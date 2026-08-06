@@ -19,12 +19,16 @@ class ModelServiceError(Exception):
     """model 호출 실패를 사용자에게 보여줄 메시지와 함께 감싸는 예외."""
 
 
-async def ask_stream(question: str, on_token, history: list[dict] | None = None) -> list[dict]:
+async def ask_stream(
+    question: str, on_token, history: list[dict] | None = None, tier: str = "free"
+) -> list[dict]:
     """질문을 model의 /ask(SSE)로 보내고, 토큰이 도착할 때마다 on_token(token)을 호출한다.
     history는 아직 model이 안 받아도 무해하게 무시되므로(Pydantic 기본 동작이 정의 안 된 필드를
     그냥 버림) 미리 실어 보내도 안전하다. 스트림이 끝나면 근거 문서(sources) 리스트를 반환한다.
+
+    tier: "free"(Solar) 또는 "paid"(Groq Llama) - 무료/유료 버전 데모용 토글값을 그대로 넘긴다.
     """
-    payload: dict = {"question": question}
+    payload: dict = {"question": question, "tier": tier}
     if history:
         payload["history"] = history
 
