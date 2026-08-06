@@ -6,6 +6,8 @@ cohorts.py
   공고 내용이 바뀌면 이 파일만 수정하면 된다.
 """
 
+import os
+
 COHORTS = {
     "13기": {
         "icon": "🎓",
@@ -27,6 +29,7 @@ COHORTS = {
             "수료 후 41개 참여기업 취업 지원",
         ],
         "contact": {"전화": "010-8926-8485", "이메일": "khj1219@knu.ac.kr"},
+        "homepage": "https://datainstitute.knu.ac.kr/contents/edu/selectEduView.do?edu_id=164&end=Y&menuId=343",
     },
     "14기": {
         "icon": "🚗",
@@ -49,6 +52,7 @@ COHORTS = {
             "성적&출결 우수자에게 경북대학교 총장상 수여",
         ],
         "contact": {"전화": "010-8926-8485", "이메일": "khj1219@knu.ac.kr"},
+        "homepage": "https://datainstitute.knu.ac.kr/contents/edu/selectEduView.do?edu_id=177&end=Y&menuId=343",
     },
     "15기": {
         "icon": "⚙️",
@@ -71,6 +75,7 @@ COHORTS = {
             "경북대학교 수료증 발급",
         ],
         "contact": {"전화": "010-8926-8485", "이메일": "khj1219@knu.ac.kr"},
+        "homepage": "https://datainstitute.knu.ac.kr/contents/edu/selectEduView.do?edu_id=180&end=Y&menuId=343",
     },
     "17기": {
         "icon": "🔋",
@@ -93,6 +98,7 @@ COHORTS = {
             "우수 수료생 경북대학교 총장상 발급, 경북대학교 수료증 발급",
         ],
         "contact": {"전화": "053-950-6742", "이메일": "khj1219@knu.ac.kr"},
+        "homepage": "https://datainstitute.knu.ac.kr/contents/edu/selectEduView.do?edu_id=188&end=Y&menuId=343",
     },
 }
 
@@ -107,3 +113,34 @@ def get_main_location(name: str) -> str:
     """지도에 표시할 대표 장소(본교육 우선, 없으면 사전교육)를 돌려준다."""
     loc = get_cohort(name).get("location", {})
     return loc.get("본교육") or loc.get("사전교육") or ""
+
+
+_POSTER_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp")
+
+
+def get_posters(name: str) -> list[dict]:
+    """frontend/assets/<기수>/ 폴더 안 이미지 파일을 그대로 스캔해서 {url, portrait, width, height}
+    형태로 돌려준다. 코드/COHORTS 딕셔너리를 안 건드리고 폴더에 파일만 넣으면(빼면) 그대로 반영된다.
+    width/height(원본 픽셀)는 확대/축소 버튼의 기준 크기를 잡는 데 쓴다."""
+    assets_dir = os.path.join(os.path.dirname(__file__), "..", "assets", name)
+    if not os.path.isdir(assets_dir):
+        return []
+
+    posters = []
+    for fn in sorted(os.listdir(assets_dir)):
+        if not fn.lower().endswith(_POSTER_EXTENSIONS):
+            continue
+        path = os.path.join(assets_dir, fn)
+        portrait, width, height = True, 520, 720
+        try:
+            from PIL import Image
+
+            with Image.open(path) as im:
+                width, height = im.size
+                portrait = height >= width
+        except Exception:
+            pass
+        posters.append(
+            {"url": f"/assets/{name}/{fn}", "portrait": portrait, "width": width, "height": height}
+        )
+    return posters

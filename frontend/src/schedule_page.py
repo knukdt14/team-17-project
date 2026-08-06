@@ -6,7 +6,7 @@ schedule_page.py
 
 from nicegui import app, ui
 
-from cohorts import get_cohort
+from cohorts import get_cohort, get_posters
 from theme import ACCENT, BORDER, INK, MUTED, frame, page_header
 
 
@@ -20,7 +20,17 @@ def schedule_page():
         ui.label("먼저 기수를 선택해주세요.").classes("text-gray-500 m-4")
         return
 
-    page_header("📅", f"{cohort} 교육 일정", data.get("title", ""))
+    def _intro_button():
+        ui.button(f"📋 {cohort} 소개", on_click=lambda: ui.navigate.to("/intro")).style(
+            f"background:{ACCENT}; color:#fff;"
+        )
+
+    page_header(
+        "📅",
+        f"{cohort} 교육 일정",
+        data.get("title", ""),
+        action=_intro_button if get_posters(cohort) else None,
+    )
 
     period = data.get("period", {})
     location = data.get("location", {})
@@ -53,11 +63,16 @@ def schedule_page():
             ui.label("모집 기간").classes("font-bold text-sm mb-1").style(f"color:{ACCENT};")
             ui.label(data.get("apply_period", "정보 없음")).classes("text-sm").style(f"color:{INK};")
         contact = data.get("contact", {})
-        if contact:
+        homepage = data.get("homepage")
+        if contact or homepage:
             with ui.card().classes("p-4"):
                 ui.label("교육 문의").classes("font-bold text-sm mb-1").style(f"color:{ACCENT};")
                 for k, v in contact.items():
                     ui.label(f"{k} · {v}").classes("text-sm").style(f"color:{INK};")
+                if homepage:
+                    ui.link("홈페이지 바로가기", homepage, new_tab=True).classes("text-sm").style(
+                        f"color:{ACCENT}; font-weight:700;"
+                    )
 
     benefits = data.get("benefits", [])
     if benefits:
